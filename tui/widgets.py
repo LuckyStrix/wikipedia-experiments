@@ -199,7 +199,7 @@ class SettingsForm(Vertical):
     def _field(self, st: S.Setting):
         value = self.settings[st.key]
         if st.type == S.BOOL:
-            yield Checkbox(st.label, value=bool(value), id=f"set-{st.key}", classes="chk")
+            yield Checkbox(st.label, value=bool(value), id=f"set-{st.key}", classes="chk", compact=True)
         else:
             with Horizontal(classes="row"):
                 yield Label(st.label, classes="lbl")
