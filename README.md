@@ -31,19 +31,61 @@ pip install -r requirements.txt
 cp config.example.toml config.toml   # optional: custom data paths, other machines
 ```
 
-Then either build the data (below), or copy it from a machine that already has it:
-`python -m tools.sync pull <machine> wiki.sqlite graph`.
+Then either get the data and build it (below), or copy the built data from a machine that already
+has it: `python -m tools.sync pull <machine> wiki.sqlite graph`.
+
+## Getting the data
+
+Nothing large is stored in this repo. Everything comes from two free public sources and goes in
+`dumps/` (or wherever `config.toml` points), with the original file names unchanged.
+
+### Wikimedia database dumps
+
+From <https://dumps.wikimedia.org/enwiki/20260901/>. Each file is named `enwiki-20260901-<name>`.
+Sizes are compressed.
+
+| file (`<name>`) | size | used for |
+|---|---|---|
+| `sha1sums.txt` | 0.2 MB | checksums; the pipeline refuses to build from incomplete files |
+| `page.sql.gz` | 2.2 GB | **required**: every page's ID, title, redirect flag |
+| `redirect.sql.gz` | 178 MB | **required**: redirect targets |
+| `linktarget.sql.gz` | 1.3 GB | **required**: link target IDs → titles |
+| `pagelinks.sql.gz` | 6.6 GB | **required**: the link graph |
+| `categorylinks.sql.gz`, `category.sql.gz` | 2.4 GB | category tree projects |
+| `geo_tags.sql.gz` | 51 MB | map projects |
+| `page_props.sql.gz` | 449 MB | Wikidata IDs |
+| `langlinks.sql.gz` | 556 MB | "how many languages have this article" |
+| `pages-articles-multistream.xml.bz2` | 25.0 GB | full article wikitext (text projects) |
+| `pages-articles-multistream-index.txt.bz2` | 271 MB | lets you pull out one article from the file above |
+
+On Linux/macOS, `pipeline/download.sh` fetches all of these (about 39 GB, a few hours at
+Wikimedia's ~5 MB/s per-connection limit; re-run it to resume). On Windows, download them in a
+browser or with `curl.exe -C - -O <url>`.
+
+**Newer dumps:** Wikimedia publishes a new dump roughly twice a month and keeps only the last few
+months, so the 20260901 files will eventually disappear. Pick a newer date from
+<https://dumps.wikimedia.org/enwiki/>, then set `dump_date = "YYYYMMDD"` in `config.toml` (and
+`DUMP_DATE=YYYYMMDD pipeline/download.sh`). Mirrors that keep older dumps are listed at
+<https://dumps.wikimedia.org/mirrors.html>.
+
+**Other datasets mentioned in [IDEAS.md](IDEAS.md)** (not needed yet): full edit-history metadata
+(`stub-meta-history.xml.gz`, 115 GB, same directory), Wikidata
+(<https://dumps.wikimedia.org/wikidatawiki/entities/>) and pageview counts
+(<https://dumps.wikimedia.org/other/pageview_complete/>).
+
+### Kiwix offline Wikipedia (.zim)
+
+`wikipedia_en_all_nopic_2026-06.zim` (~53 GB): all of English Wikipedia as rendered HTML, without
+images. Download from <https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_nopic_2026-06.zim>,
+or pick a newer `wikipedia_en_all_nopic_*.zim` from <https://download.kiwix.org/zim/wikipedia/>. The
+code uses the newest `.zim` in `dumps/`. Kiwix also offers each file as a torrent (add `.torrent`
+to the URL), which is usually faster.
 
 ## Building the data
 
 ```bash
-pipeline/download.sh          # ~39 GB from dumps.wikimedia.org, a few hours; resumable
-python -m pipeline.build_core # ~1 hour, ~15 GB RAM peak
+python -m pipeline.build_core   # needs the 4 required dumps; ~1 hour, ~15 GB RAM peak
 ```
-
-`pipeline/download.sh` needs bash and wget (Linux/macOS). On Windows, download the files it lists by
-hand, or build on Linux and sync the results over. The Kiwix `.zim` comes from
-<https://download.kiwix.org/zim/wikipedia/> and goes in `dumps/` too.
 
 ### data/wiki.sqlite
 
