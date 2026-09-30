@@ -1,0 +1,56 @@
+"""Turn a stage's output lines into progress for its card.
+
+Each parser has ``feed(line) -> (pct, text) | None`` and ``hide(line) -> bool`` (lines that exist
+only to report progress and shouldn't clutter the log).
+"""
+from __future__ import annotations
+
+import re
+
+from wikiexp.progress import PREFIX
+
+
+class ProgressParser:
+    """Python stages report with wikiexp.progress: "@progress <pct> <text>"."""
+
+    def feed(self, line: str):
+        if line.startswith(PREFIX):
+            pct, _, text = line[len(PREFIX):].partition(" ")
+            if pct.isdigit():
+                return int(pct), text.strip()
+        return None
+
+    def hide(self, line: str) -> bool:
+        return line.startswith(PREFIX)
+
+
+class WgetParser:
+    """pipeline/download.sh: "(i/N) downloading <file>" headers, then wget's dot progress.
+
+    Overall progress counts each file equally (the text says which file and how far along it is).
+    """
+    FILE = re.compile(r"\((\d+)/(\d+)\) downloading (\S+)")
+    PCT = re.compile(r"\s(\d{1,3})%\s")
+    CHECK = re.compile(r"verifying checksums")
+
+    def __init__(self):
+        self.i, self.n, self.name = 0, 1, ""
+
+    def feed(self, line: str):
+        if m := self.FILE.search(line):
+            self.i, self.n, self.name = int(m.group(1)), int(m.group(2)), m.group(3)
+            return self._pct(0), f"{self.name} ({self.i}/{self.n})"
+        if self.i and (m := self.PCT.search(line)):
+            p = int(m.group(1))
+            return self._pct(p), f"{self.name} {p}% ({self.i}/{self.n})"
+        if self.CHECK.search(line):
+            return 99, "verifying checksums"
+        return None
+
+    def _pct(self, file_pct: int) -> int:
+        return min(99, int(((self.i - 1) + file_pct / 100) / self.n * 100))
+
+    def hide(self, line: str) -> bool:
+        # wget prints a dot-progress line every 32 MB; keep only every 10th
+        m = self.PCT.search(line)
+        return bool(m) and self.i > 0 and int(m.group(1)) % 10 != 0

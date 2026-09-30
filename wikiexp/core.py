@@ -6,11 +6,12 @@ import numpy as np
 from . import paths
 
 
-def connect():
+def connect(db_path=None, **kw):
     """Read-only connection to wiki.sqlite."""
-    if not paths.DB.exists():
-        raise FileNotFoundError(f"{paths.DB} not found - run: python -m pipeline.build_core")
-    return sqlite3.connect(f"file:{paths.DB}?mode=ro", uri=True)
+    db_path = db_path or paths.DB
+    if not db_path.exists():
+        raise FileNotFoundError(f"{db_path} not found - run: python -m pipeline.build_core")
+    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, **kw)
 
 
 def resolve(db, title):
@@ -25,8 +26,9 @@ def resolve(db, title):
 class Graph:
     """Link graph as CSR arrays indexed by articles.idx (memory-mapped, so loading is instant)."""
 
-    def __init__(self):
-        load = lambda name: np.load(paths.GRAPH / f"{name}.npy", mmap_mode="r")
+    def __init__(self, graph_dir=None):
+        graph_dir = graph_dir or paths.GRAPH
+        load = lambda name: np.load(graph_dir / f"{name}.npy", mmap_mode="r")
         self.out_indptr, self.out_indices = load("out_indptr"), load("out_indices")
         self.in_indptr, self.in_indices = load("in_indptr"), load("in_indices")
         self.page_ids = load("idx_to_page_id")

@@ -1,28 +1,39 @@
 #!/usr/bin/env bash
-# Downloads the enwiki dump files the pipeline uses into dumps/ (or $WIKI_DUMPS).
-# Resumable: re-run it and wget -c picks up where it left off. Progress goes to dumps/download.log.
+# Downloads Wikimedia dump files into dumps/ (or $WIKI_DUMPS), then verifies their checksums.
+# Resumable: re-run it and wget -c picks up where it left off. Output also goes to dumps/download.log.
 #
-# The Kiwix .zim is separate: get wikipedia_en_all_nopic_*.zim from https://download.kiwix.org/zim/wikipedia/
-# and put it in dumps/ too.
+#   pipeline/download.sh                       # the default set below
+#   pipeline/download.sh page.sql.gz ...       # specific files (names without the enwiki-DATE- prefix)
+#
+# The Kiwix .zim is separate: see "Getting the data" in the README.
 set -u
-DATE=${DUMP_DATE:-20260901}
+DATE=${WIKI_DUMP_DATE:-20260901}
 DUMPS=${WIKI_DUMPS:-"$(dirname "$0")/../dumps"}
-mkdir -p "$DUMPS" && cd "$DUMPS"
-exec >> download.log 2>&1
+mkdir -p "$DUMPS" && cd "$DUMPS" || exit 1
+exec > >(tee -a download.log) 2>&1
+
+if [ $# -gt 0 ]; then
+  files=("$@")
+else
+  files=(
+    page.sql.gz redirect.sql.gz linktarget.sql.gz pagelinks.sql.gz
+    categorylinks.sql.gz category.sql.gz geo_tags.sql.gz page_props.sql.gz langlinks.sql.gz
+    pages-articles-multistream-index.txt.bz2 pages-articles-multistream.xml.bz2
+  )
+fi
+files=("${files[@]/sha1sums.txt}")        # always fetched; drop it from the numbered list
+files=($(printf '%s\n' "${files[@]}" | grep .))
 
 base=https://dumps.wikimedia.org/enwiki/$DATE
-files=(
-  pages-articles-multistream-index.txt.bz2
-  page.sql.gz linktarget.sql.gz redirect.sql.gz pagelinks.sql.gz
-  categorylinks.sql.gz category.sql.gz
-  geo_tags.sql.gz page_props.sql.gz langlinks.sql.gz
-  pages-articles-multistream.xml.bz2
-)
-wget -q -c "$base/enwiki-$DATE-sha1sums.txt"
+wget -q -c "$base/enwiki-$DATE-sha1sums.txt" || { echo "can't fetch $base/enwiki-$DATE-sha1sums.txt"; exit 1; }
+n=${#files[@]}; i=0; failed=0
 for f in "${files[@]}"; do
-  echo "[$(date '+%F %T')] downloading $f"
-  wget -c --progress=dot:giga "$base/enwiki-$DATE-$f" || echo "FAILED: $f"
+  i=$((i + 1))
+  echo "[$(date '+%F %T')] ($i/$n) downloading $f"
+  wget -c --progress=dot:giga "$base/enwiki-$DATE-$f" || { echo "FAILED: $f"; failed=1; }
 done
 echo "[$(date '+%F %T')] verifying checksums"
-sha1sum -c --ignore-missing "enwiki-$DATE-sha1sums.txt"
+names=("${files[@]/#/enwiki-$DATE-}")
+grep -F -f <(printf '%s\n' "${names[@]}") "enwiki-$DATE-sha1sums.txt" | sha1sum -c - || failed=1
 echo "[$(date '+%F %T')] done"
+exit $failed

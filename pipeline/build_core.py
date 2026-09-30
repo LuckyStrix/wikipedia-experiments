@@ -17,6 +17,7 @@ import time
 import numpy as np
 
 from wikiexp import paths
+from wikiexp.progress import progress
 from wikiexp.sqldump import header, int_rows, rows, title_text, verify
 
 SCHEMA = """
@@ -37,14 +38,19 @@ CREATE INDEX links_dst ON links(dst);
 INPUTS = ["page.sql.gz", "redirect.sql.gz", "linktarget.sql.gz", "pagelinks.sql.gz"]
 
 T0 = time.time()
+# pagelinks rows per compressed byte, measured on the 2026-09 dump; only used for the progress bar
+LINKS_PER_GZ_BYTE = 0.235
+IN_LINKS_CHUNK = 50_000_000
 
 
-def log(msg):
+def log(msg, pct=None):
     print(f"[{time.time() - T0:7.0f}s] {msg}", flush=True)
+    if pct is not None:
+        progress(pct, msg.strip())
 
 
 def load_pages():
-    log("reading page table")
+    log("reading page table", 3)
     path = paths.dump("page.sql.gz")
     _, auto_inc = header(path)
     title_to_id = {}
@@ -68,13 +74,13 @@ def load_pages():
     art_lens = np.array(art_lens, dtype=np.int64)[order]
     page_to_idx = np.full(max_pid + 1, -1, dtype=np.int32)
     page_to_idx[art_ids] = np.arange(len(art_ids), dtype=np.int32)
-    log(f"  {len(art_ids):,} articles, {len(redirect_ids):,} redirects")
+    log(f"  {len(art_ids):,} articles, {len(redirect_ids):,} redirects", 22)
     return title_to_id, art_ids, art_titles, art_lens, set(redirect_ids), page_to_idx
 
 
 def resolve_redirects(title_to_id, redirect_ids, page_to_idx):
     """Return {redirect page_id: article idx}, following chains of redirects."""
-    log("reading redirect table")
+    log("reading redirect table", 23)
     hop = {}
     for rd_from, ns, title, interwiki in rows(
             paths.dump("redirect.sql.gz"), ["rd_from", "rd_namespace", "rd_title", "rd_interwiki"]):
@@ -96,7 +102,7 @@ def resolve_redirects(title_to_id, redirect_ids, page_to_idx):
 
 def map_linktargets(title_to_id, redirect_to_idx, page_to_idx):
     """Array mapping linktarget id -> article idx (-1 if not an article)."""
-    log("reading linktarget table")
+    log("reading linktarget table", 26)
     path = paths.dump("linktarget.sql.gz")
     _, auto_inc = header(path)
     lt_to_idx = np.full(auto_inc + 1, -1, dtype=np.int32)
@@ -128,12 +134,13 @@ def map_linktargets(title_to_id, redirect_to_idx, page_to_idx):
 
 def load_links(page_to_idx, lt_to_idx):
     """Sorted, de-duplicated int64 keys (src_idx << 32 | dst_idx)."""
-    log("reading pagelinks table (the long step)")
+    log("reading pagelinks table (the long step)", 38)
     path = paths.dump("pagelinks.sql.gz")
     cols, _ = header(path)
     if cols != ["pl_from", "pl_from_namespace", "pl_target_id"]:
         raise RuntimeError(f"unexpected pagelinks columns: {cols}")
     parts, total = [], 0
+    expected = path.stat().st_size * LINKS_PER_GZ_BYTE
     for arr in int_rows(path, 3):
         total += len(arr)
         arr = arr[(arr[:, 1] == 0) & (arr[:, 0] < len(page_to_idx)) & (arr[:, 2] < len(lt_to_idx))]
@@ -142,12 +149,12 @@ def load_links(page_to_idx, lt_to_idx):
         ok = (src >= 0) & (dst >= 0) & (src != dst)
         parts.append((src[ok].astype(np.int64) << 32) | dst[ok].astype(np.int64))
         if len(parts) % 50 == 0:
-            log(f"  {total:,} raw links read")
+            log(f"  {total:,} raw links read", 38 + min(29, 29 * total / expected))
     keys = np.concatenate(parts)
     del parts
     if len(keys) == 0:
         raise RuntimeError("no article links found - are the dump files from the same date?")
-    log(f"  {total:,} raw links -> {len(keys):,} article links; sorting")
+    log(f"  {total:,} raw links -> {len(keys):,} article links; sorting", 68)
     keys.sort()
     keep = np.empty(len(keys), dtype=bool)
     keep[0] = True
@@ -157,20 +164,41 @@ def load_links(page_to_idx, lt_to_idx):
     return keys
 
 
-def write_graph(keys, art_ids):
-    log("writing graph arrays")
+def split_keys(keys):
+    """(src_idx, dst_idx) int32 arrays from sorted keys; frees the keys as it goes."""
+    src = (keys >> 32).astype(np.int32)
+    keys &= 0xFFFFFFFF
+    dst = keys.astype(np.int32)
+    return src, dst
+
+
+def write_graph(src, dst, art_ids):
+    """CSR arrays for outgoing links (edges are already sorted by src) and incoming links.
+
+    Incoming links are placed with a chunked counting sort rather than argsort, which would need
+    an 8-byte index per edge (~6 GB for enwiki) on top of everything else.
+    """
+    log("writing graph arrays", 72)
     out, n = paths.GRAPH, len(art_ids)
     out.mkdir(parents=True, exist_ok=True)
-    src = (keys >> 32).astype(np.int32)
-    dst = (keys & 0xFFFFFFFF).astype(np.int32)
     np.save(out / "idx_to_page_id.npy", art_ids)
     np.save(out / "out_indptr.npy", np.concatenate(([0], np.cumsum(np.bincount(src, minlength=n)))))
     np.save(out / "out_indices.npy", dst)
-    order = np.argsort(dst, kind="stable")
-    np.save(out / "in_indptr.npy", np.concatenate(([0], np.cumsum(np.bincount(dst, minlength=n)))))
-    np.save(out / "in_indices.npy", src[order])
-    del order
-    return src, dst
+    in_indptr = np.concatenate(([0], np.cumsum(np.bincount(dst, minlength=n))))
+    np.save(out / "in_indptr.npy", in_indptr)
+    in_indices = np.empty(len(dst), dtype=np.int32)
+    fill = in_indptr[:-1].copy()   # next free slot for each destination
+    step = IN_LINKS_CHUNK
+    for i in range(0, len(dst), step):
+        d, s = dst[i:i + step], src[i:i + step]
+        order = np.argsort(d, kind="stable")
+        ds = d[order]
+        # rank of each edge among same-destination edges in this chunk
+        starts = np.flatnonzero(np.concatenate(([True], ds[1:] != ds[:-1])))
+        rank = np.arange(len(ds)) - np.repeat(starts, np.diff(np.append(starts, len(ds))))
+        in_indices[fill[ds] + rank] = s[order]
+        fill += np.bincount(d, minlength=n)
+    np.save(out / "in_indices.npy", in_indices)
 
 
 def write_sqlite(art_ids, art_titles, art_lens, redirect_titles, src, dst, stats):
@@ -181,7 +209,7 @@ def write_sqlite(art_ids, art_titles, art_lens, redirect_titles, src, dst, stats
     db = sqlite3.connect(tmp)
     db.executescript("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF; PRAGMA cache_size=-2000000;")
     db.executescript(SCHEMA)
-    log("writing articles and redirects")
+    log("writing articles and redirects", 76)
     db.executemany("INSERT INTO articles VALUES (?,?,?,?)",
                    zip(art_ids.tolist(), range(len(art_ids)), map(title_text, art_titles), art_lens.tolist()))
     db.executemany("INSERT INTO redirects VALUES (?,?,?)",
@@ -192,8 +220,9 @@ def write_sqlite(art_ids, art_titles, art_lens, redirect_titles, src, dst, stats
         db.executemany("INSERT INTO links VALUES (?,?)",
                        zip(art_ids[src[i:i + step]].tolist(), art_ids[dst[i:i + step]].tolist()))
         db.commit()
-        log(f"  {min(i + step, len(src)):,} / {len(src):,}")
-    log("indexing")
+        log(f"  {min(i + step, len(src)):,} / {len(src):,} links written",
+            80 + 16 * min(i + step, len(src)) / len(src))
+    log("indexing", 97)
     db.executescript(POST_SCHEMA)
     db.executemany("INSERT INTO meta VALUES (?,?)",
                    [("dump_date", paths.DUMP_DATE), ("built", time.strftime("%Y-%m-%d %H:%M"))]
@@ -211,7 +240,7 @@ def main():
     paths.DATA.mkdir(parents=True, exist_ok=True)
 
     if not args.skip_verify:
-        log("verifying dump checksums")
+        log("verifying dump checksums", 1)
         verify(INPUTS)
 
     title_to_id, art_ids, art_titles, art_lens, redirect_ids, page_to_idx = load_pages()
@@ -223,8 +252,9 @@ def main():
 
     keys = load_links(page_to_idx, lt_to_idx)
     del lt_to_idx, page_to_idx
-    src, dst = write_graph(keys, art_ids)
+    src, dst = split_keys(keys)
     del keys
+    write_graph(src, dst, art_ids)
 
     stats = {"articles": len(art_ids), "redirects": len(redirect_titles), "links": len(src)}
     write_sqlite(art_ids, art_titles, art_lens, redirect_titles, src, dst, stats)

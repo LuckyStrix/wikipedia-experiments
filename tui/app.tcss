@@ -1,0 +1,80 @@
+Screen { layout: vertical; }
+#body { height: 1fr; }
+
+/* ── sidebar ─────────────────────────────────────────────────────────────── */
+#side { width: 44; padding: 0 1; border-right: vkey $panel-lighten-1; }
+.side-title { color: $secondary; text-style: bold; margin-top: 1; }
+#data-path { color: $text-muted; margin-bottom: 1; width: 100%; height: auto; }
+.stage { height: auto; border: round $panel-lighten-2; padding: 0 1;
+         border-title-color: $text-muted; }
+.stage.running { border: round $primary; border-title-color: $primary; border-title-style: bold; }
+.stage.done    { border: round $success; border-title-color: $success; }
+.stage.failed  { border: round $error;   border-title-color: $error; }
+.stage ProgressBar { width: 100%; }
+.stage Bar { width: 1fr; }
+.stage.done Bar > .bar--complete, .stage.done Bar > .bar--bar { color: $success; }
+.stage.failed Bar > .bar--complete, .stage.failed Bar > .bar--bar { color: $error; }
+.detail { color: $text-muted; width: 100%; height: auto; }
+.stage-btns { height: 1; }
+.stage-btns Button { width: 1fr; min-width: 0; margin-right: 1; }
+.stage-btns Button:last-of-type { margin-right: 0; }
+#actions { height: auto; margin-top: 1; }
+#actions Button { width: 1fr; min-width: 0; margin-right: 1; }
+#actions Button:last-of-type { margin-right: 0; }
+.experiment { width: 100%; margin-top: 1; }
+.ex-desc { color: $text-muted; width: 100%; height: auto; }
+
+/* ── settings ────────────────────────────────────────────────────────────── */
+#main { width: 1fr; }
+#form { height: 1fr; }
+#tabs { height: 1fr; }
+TabPane { padding: 0 1; }
+.section { color: $secondary; text-style: bold; margin-top: 1;
+           border-bottom: solid $panel-lighten-1; width: 100%; }
+.row { height: 1; margin-top: 1; }
+.lbl { width: 16; color: $text-muted; }
+.hint { color: $text-disabled; margin-left: 2; width: auto; }
+.help { color: $text-disabled; margin-left: 16; padding-right: 2; width: 1fr; height: auto; }
+.text { width: 20; }
+.path { width: 1fr; }
+.chk { margin-left: 15; height: 1; margin-top: 1; }
+.machine { margin-top: 1; }
+Input.-invalid { background: $error 25%; }
+
+/* ── log ─────────────────────────────────────────────────────────────────── */
+#log-handle { height: 1; background: $panel; color: $text-muted; padding: 0 1; }
+#log-handle:hover, #log-handle.-dragging { background: $primary 40%; color: $text; }
+#log-wrap { height: 12; }
+#log { background: $surface; padding: 0 1; scrollbar-size-vertical: 1; }
+Screen.-log-max #form { display: none; }
+Screen.-log-max #log-wrap { height: 1fr; }
+
+/* ── dialogs ─────────────────────────────────────────────────────────────── */
+ModalScreen { align: center middle; }
+.dialog { width: 64; height: auto; max-height: 90%; border: round $primary; background: $surface;
+          padding: 0 1; }
+.dialog-title { text-style: bold; color: $secondary; }
+.dialog-sub { color: $text-muted; }
+.dialog-body { margin: 1 0; }
+.dialog-btns { height: auto; align-horizontal: right; margin-top: 1; }
+.dialog-btns Button { margin-left: 1; }
+#view { width: 96; height: 80%; }
+#view VerticalScroll { height: 1fr; margin-top: 1; }
+
+/* ── title picker ────────────────────────────────────────────────────────── */
+.title-picker { height: auto; width: 1fr; }
+.title-picker Input.-bad { color: $warning; }
+.title-picker .suggestions { height: auto; max-height: 10; display: none; border: round $panel-lighten-2;
+                             background: $surface; }
+.picker-status { color: $text-muted; }
+.picker-status.-bad { color: $warning; }
+
+/* ── six degrees ─────────────────────────────────────────────────────────── */
+#sd-body { padding: 1 2; height: 1fr; }
+.sd-intro { color: $text-muted; margin-bottom: 1; width: 100%; height: auto; }
+.sd-row { height: auto; margin-bottom: 1; }
+.sd-lbl { width: 6; color: $secondary; text-style: bold; }
+#sd-btns { height: 1; margin: 0 0 1 6; }
+#sd-btns Button { margin-right: 2; }
+#sd-status { color: $text-muted; margin-left: 6; }
+#sd-results { height: 1fr; background: $surface; padding: 0 1; margin-top: 1; }

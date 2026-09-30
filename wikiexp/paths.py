@@ -1,8 +1,9 @@
 """Where data lives on this machine.
 
 Code is shared through git; data is not. Each machine can keep its data wherever it likes by
-setting paths in config.toml (see config.example.toml) or the WIKI_DATA / WIKI_DUMPS environment
-variables. The defaults are data/ and dumps/ inside the repo.
+setting paths in config.toml (see config.example.toml) or the WIKI_DATA / WIKI_DUMPS /
+WIKI_DUMP_DATE environment variables (the app passes its current settings this way). The defaults
+are data/ and dumps/ inside the repo.
 """
 import os
 import tomllib
@@ -24,7 +25,7 @@ _paths = CONFIG.get("paths", {})
 
 DATA = Path(os.environ.get("WIKI_DATA") or _paths.get("data") or ROOT / "data")
 DUMPS = Path(os.environ.get("WIKI_DUMPS") or _paths.get("dumps") or ROOT / "dumps")
-DUMP_DATE = CONFIG.get("dump_date", "20260901")
+DUMP_DATE = os.environ.get("WIKI_DUMP_DATE") or CONFIG.get("dump_date", "20260901")
 
 DB = DATA / "wiki.sqlite"
 GRAPH = DATA / "graph"

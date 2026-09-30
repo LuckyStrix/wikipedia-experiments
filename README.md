@@ -8,17 +8,70 @@ The repo holds code only. The data (~90 GB of Wikimedia dumps and a Kiwix `.zim`
 gets built from them) lives outside git, and each machine keeps its own copy. This makes it easy to
 run heavy jobs on one computer (e.g. a GPU box) and analyse the results on another.
 
+## The app
+
+```bash
+python app.py
+```
+
+A terminal app (built with [Textual](https://textual.textualize.io/)) that drives everything. It
+runs in any terminal: Linux, macOS, Windows Terminal (no WSL needed), or over SSH.
+
+- **Left:** one card per pipeline stage (grey = not run, blue = running, green = done, red =
+  failed) with **Run** and **View** buttons, plus **Run all** / **Stop**. Status comes from what's
+  on disk, so stages built earlier (or from the command line) show as done, and a stage already
+  running in another terminal is detected and won't be started twice. Below the stages, the
+  **experiments**; each unlocks once the stages it needs are done.
+- **Right:** settings in tabs (folders, dump date, which optional files to download, build
+  options, machines), with the output log underneath.
+
+| Key | Action |
+| --- | --- |
+| `r` / `ctrl+r` | Run every stage that isn't done yet, in order |
+| `s` | Stop the running stage (and everything it started) |
+| `ctrl+s` | Save settings to `config.toml` |
+| `l` | Maximise / restore the log; `ctrl+↑` / `ctrl+↓` resize it, or drag the bar above it |
+| `t` | Cycle colour themes (Campbell, One Half Dark, ...) |
+| `q` | Quit (asks first if a stage is running) |
+
+`r`, `s`, `l`, `t` and `q` are ignored while you're typing in a field. A run uses the settings as
+they were when it started; unsaved edits apply to runs started from the app, and `ctrl+s` makes
+them the default for the command-line scripts too.
+
+Every run started from the app is recorded in `data/runs/`: `pipeline.log` (every line,
+timestamped) and `runs.json` (settings, machine, git commit, and each stage's timing, result and
+output sizes).
+
+### Six Degrees
+
+Opens from the sidebar once the core database and title index are built. Type part of a title and
+pick from the suggestions; only real articles are accepted (the Find button stays disabled until
+both ends are picked). Suggestions include exact matches in any case, redirects ("USA" → United
+States), prefixes, substrings and typos ("Mitocondrion"), most-linked first. `ctrl+r` picks a
+random pair of well-known articles. Also available on the command line:
+
+```bash
+python -m experiments.six_degrees "Kevin Bacon" "Mitochondrion"
+python -m experiments.six_degrees --random
+```
+
 ## Layout
 
 ```
-pipeline/     turns raw dumps into shared datasets (download.sh, build_core.py, ...)
-wikiexp/      shared Python library used by the pipeline and experiments
+app.py        starts the terminal app
+pipeline/     UI-free core: stages, settings registry, runner, progress parsers, run records,
+              and the build scripts themselves (download.sh, build_core.py, build_titles.py)
+tui/          the Textual app: stage cards, settings form, log, dialogs, title picker
+wikiexp/      shared library: paths, dump readers, database/graph access, title search
 experiments/  one folder per experiment (see experiments/README.md)
 tools/        sync.py: move data between machines over SSH
+tests/        pytest suite; uses a tiny hand-made Wikipedia, no dumps needed
 dumps/        raw downloads            - not in git
 data/         generated datasets        - not in git
 config.toml   this machine's settings   - not in git (see config.example.toml)
 ```
+
+Everything in `pipeline/` also works without the app, e.g. `python -m pipeline.build_core`.
 
 ## Setup
 
@@ -27,9 +80,13 @@ Requires Python 3.11+. Run everything from the repo root.
 ```bash
 git clone https://github.com/LuckyStrix/wikipedia-experiments
 cd wikipedia-experiments
-pip install -r requirements.txt
+python -m venv .venv                 # Windows: py -3.14 -m venv .venv
+.venv/bin/pip install -r requirements.txt   # Windows: .venv\Scripts\pip ...
 cp config.example.toml config.toml   # optional: custom data paths, other machines
+.venv/bin/python app.py
 ```
+
+Tests: `pip install -r requirements-dev.txt`, then `python -m pytest tests`.
 
 Then either get the data and build it (below), or copy the built data from a machine that already
 has it: `python -m tools.sync pull <machine> wiki.sqlite graph`.
@@ -83,8 +140,11 @@ to the URL), which is usually faster.
 
 ## Building the data
 
+Use the app's stage cards, or run the steps directly:
+
 ```bash
-python -m pipeline.build_core   # needs the 4 required dumps; ~1 hour, ~15 GB RAM peak
+python -m pipeline.build_core     # needs the 4 required dumps; ~1 hour, ~16 GB RAM peak
+python -m pipeline.build_titles   # needs wiki.sqlite; title search index (~15 minutes)
 ```
 
 ### data/wiki.sqlite
@@ -95,6 +155,11 @@ python -m pipeline.build_core   # needs the 4 required dumps; ~1 hour, ~15 GB RA
 | `redirects` | `page_id`, `title`, `target` | `target` is the final article's `page_id` (chains already followed) |
 | `links` | `src`, `dst` | article → article by `page_id`; links via redirects resolved; no duplicates or self-links |
 | `meta` | `key`, `value` | dump date, build time, row counts |
+
+### data/titles.sqlite
+
+Every article and redirect title in popularity order (most incoming links first), with a trigram
+full-text index. Used through `wikiexp.titles.TitleIndex` (`search`, `resolve`, `random_article`).
 
 ### data/graph/
 
