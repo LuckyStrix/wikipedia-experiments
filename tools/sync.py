@@ -35,8 +35,9 @@ def remote_shell(m, command):
     is sent base64-encoded to survive either shell's quoting rules.
     """
     if m["os"] == "windows":
+        command = "$ProgressPreference = 'SilentlyContinue'; " + command  # else progress bars arrive as XML
         encoded = base64.b64encode(command.encode("utf-16-le")).decode()
-        return [f"powershell -NoProfile -EncodedCommand {encoded}"]
+        return [f"powershell -NoProfile -NonInteractive -EncodedCommand {encoded}"]
     return [command]
 
 
@@ -47,9 +48,11 @@ def remote_mkdir(m, path):
 
 
 def run(cmd, dry, show=None):
-    print("+", show or " ".join(cmd))
+    print("+", show or " ".join(cmd), flush=True)
     if not dry:
-        subprocess.run(cmd, check=True)
+        code = subprocess.run(cmd).returncode
+        if code:
+            sys.exit(f"failed (exit code {code})")
 
 
 def parent(rel):
@@ -78,10 +81,12 @@ def remote_run(m, command, dry):
     if "repo" not in m:
         sys.exit("set repo = ... for this machine in config.toml")
     if m["os"] == "windows":
-        full = f"Set-Location '{m['repo']}'; git pull --ff-only; if ($?) {{ {command} }}"
+        # if sshd's default shell is PowerShell, any failure arrives as exit code 1
+        full = f"Set-Location '{m['repo']}'; git pull --ff-only; if ($?) {{ {command} }}; exit $LASTEXITCODE"
     else:
         full = f"cd '{m['repo']}' && git pull --ff-only && {command}"
-    run(["ssh", "-t", m["host"], *remote_shell(m, full)], dry, f"ssh {m['host']} {full}")
+    tty = ["-t"] if sys.stdin.isatty() else []  # a terminal lets Ctrl+C stop the remote command
+    run(["ssh", *tty, m["host"], *remote_shell(m, full)], dry, f"ssh {m['host']} {full}")
 
 
 def main():

@@ -120,6 +120,9 @@ python -m tools.sync run  gpu "python -m experiments.x.y"  # git pull + run ther
 python -m tools.sync pull gpu x                            # fetch data/x back
 ```
 
+On a Windows machine the command runs in PowerShell: use the venv's Python
+(`.venv\\Scripts\\python -m ...`) so the right version is picked, and single quotes inside the command.
+
 For long jobs, start them in a terminal on the remote machine (or with `tools.sync run` inside
 `tmux`/`screen` locally), since an SSH disconnect stops the remote command.
 
