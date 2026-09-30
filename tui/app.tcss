@@ -1,4 +1,6 @@
 Screen { layout: vertical; }
+/* thin scrollbars everywhere, like the 3D modeling app's log */
+Screen, VerticalScroll, RichLog, OptionList, TextArea { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
 #body { height: 1fr; }
 
 /* ── sidebar ─────────────────────────────────────────────────────────────── */

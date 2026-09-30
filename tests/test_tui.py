@@ -99,3 +99,18 @@ async def test_six_degrees_only_accepts_real_titles(tiny_data, tmp_path):
         results = screen.query_one("#sd-results", RichLog)
         assert await wait_for(pilot, lambda: "4 clicks" in log_text(results))
         assert "Footloose" in log_text(results)
+
+
+@pytest.mark.asyncio
+async def test_pipeline_keys_only_work_on_main_screen(tiny_data, tmp_path):
+    from experiments.six_degrees.screen import SixDegreesScreen
+    marker = tmp_path / "ran.txt"
+    app = make_app(tmp_path, [fake_stage("a", f"open(r'{marker}', 'w')")], data_dir=tiny_data)
+    async with app.run_test(size=(140, 45)) as pilot:
+        screen = SixDegreesScreen(tiny_data)
+        app.push_screen(screen)
+        assert await wait_for(pilot, lambda: screen.finder is not None)
+        screen.query_one("#sd-random").focus()
+        await pilot.press("r", "ctrl+r")
+        await pilot.pause(0.5)
+        assert not marker.exists()

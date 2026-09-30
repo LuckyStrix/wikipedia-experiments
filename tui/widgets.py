@@ -273,7 +273,7 @@ class TitlePicker(Vertical):
         self.input.value = self._set_value
         self.input.cursor_position = len(self._set_value)
         self._hide()
-        self._status(f"✓ {m.article}  ·  {m.links:,} incoming links" if m else "")
+        self._status(f"✓ {m.article}  ·  {m.links:,} incoming link{'s' * (m.links != 1)}" if m else "")
         self.input.remove_class("-bad")
         self.post_message(self.Picked(self))
 

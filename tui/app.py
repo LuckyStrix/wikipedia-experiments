@@ -54,6 +54,8 @@ class WikiApp(App):
     # Bare-letter keys are ignored while typing in the settings form, so a stray "r" in a path
     # field can't start a run. ctrl+r always works.
     FORM_GUARDED = {"key_run_all", "key_stop", "key_quit", "toggle_log", "cycle_theme"}
+    # pipeline keys only apply on the main screen (hidden from the footer elsewhere)
+    MAIN_ONLY = {"key_run_all", "run_all", "key_stop", "save_settings", "toggle_log", "log_resize"}
 
     BINDINGS = [
         Binding("r", "key_run_all", "Run all"),
@@ -89,6 +91,8 @@ class WikiApp(App):
 
     # ── key guards ────────────────────────────────────────────────────────────
     def check_action(self, action: str, parameters) -> bool | None:
+        if action in self.MAIN_ONLY and len(self.screen_stack) > 1:
+            return False
         if action in self.FORM_GUARDED and self._typing():
             return None
         return True

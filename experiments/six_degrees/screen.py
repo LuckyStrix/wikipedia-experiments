@@ -121,7 +121,7 @@ class SixDegreesScreen(Screen):
                        style=f"bold {theme.primary}"))
         for i, t in enumerate(titles):
             log.write(Text.assemble(("   " if i else "", ""), ("→ " if i else "  ", "dim"), t))
-        self._status(f"Searched {result.visited:,} articles in {result.seconds:.2f}s.")
+        self._status(f"Searched {result.visited:,} article{'s' * (result.visited != 1)} in {result.seconds:.2f}s.")
 
     @on(Button.Pressed, "#sd-swap")
     def action_swap(self) -> None:
@@ -138,7 +138,13 @@ class SixDegreesScreen(Screen):
     @work(thread=True, group="random")
     def _random(self) -> None:
         t = self.finder.titles
-        pair = t.random_article(), t.random_article()
+        a = t.random_article()
+        b = t.random_article()
+        for _ in range(20):   # avoid picking the same article twice
+            if b.page_id != a.page_id:
+                break
+            b = t.random_article()
+        pair = a, b
         self.app.call_from_thread(self._set_pair, *pair)
 
     def _set_pair(self, a, b) -> None:
