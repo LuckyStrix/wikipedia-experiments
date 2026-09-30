@@ -1,0 +1,15 @@
+# Copy to config.toml (gitignored) and edit for this machine. Everything is optional.
+
+# dump_date = "20260901"
+
+[paths]
+# Where big files live on this machine. Defaults: data/ and dumps/ inside the repo.
+# data = "D:/wiki/data"
+# dumps = "D:/wiki/dumps"
+
+# Other machines, for tools/sync.py. "host" is anything ssh accepts, including ~/.ssh/config aliases.
+# [machines.gpu]
+# host = "me@gpu-pc"
+# repo = "C:/Users/me/wikipedia-experiments"
+# data = "C:/Users/me/wikipedia-experiments/data"   # optional; defaults to <repo>/data
+# os = "windows"                                      # or "posix"
