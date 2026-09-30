@@ -17,6 +17,10 @@ Screen, VerticalScroll, RichLog, OptionList, TextArea { scrollbar-size-vertical:
 .stage.done Bar > .bar--complete, .stage.done Bar > .bar--bar { color: $success; }
 .stage.failed Bar > .bar--complete, .stage.failed Bar > .bar--bar { color: $error; }
 .detail { color: $text-muted; width: 100%; height: auto; }
+/* a percentage only means something once a stage reports progress */
+.stage.waiting PercentageStatus, .stage.failed PercentageStatus,
+.stage.running PercentageStatus { visibility: hidden; }
+.stage.running.-has-progress PercentageStatus { visibility: visible; }
 .stage-btns { height: 1; }
 .stage-btns Button { width: 1fr; min-width: 0; margin-right: 1; }
 .stage-btns Button:last-of-type { margin-right: 0; }

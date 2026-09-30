@@ -17,6 +17,7 @@ import time
 import numpy as np
 
 from wikiexp import paths
+from wikiexp import progress as prog
 from wikiexp.progress import progress
 from wikiexp.sqldump import header, int_rows, rows, title_text, verify
 
@@ -238,6 +239,7 @@ def main():
     ap.add_argument("--skip-verify", action="store_true", help="don't check dump checksums first")
     args = ap.parse_args()
     paths.DATA.mkdir(parents=True, exist_ok=True)
+    prog.start("core")
 
     if not args.skip_verify:
         log("verifying dump checksums", 1)

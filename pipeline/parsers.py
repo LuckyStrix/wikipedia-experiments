@@ -13,6 +13,9 @@ from wikiexp.progress import PREFIX
 class ProgressParser:
     """Python stages report with wikiexp.progress: "@progress <pct> <text>"."""
 
+    def __init__(self, settings=None):
+        pass
+
     def feed(self, line: str):
         if line.startswith(PREFIX):
             pct, _, text = line[len(PREFIX):].partition(" ")
@@ -27,14 +30,16 @@ class ProgressParser:
 class WgetParser:
     """pipeline/download.sh: "(i/N) downloading <file>" headers, then wget's dot progress.
 
-    Overall progress counts each file equally (the text says which file and how far along it is).
+    Overall progress weights each file by its approximate size (``sizes``, file name -> MB; files
+    not listed count as 100 MB), since the article text alone is most of the download.
     """
     FILE = re.compile(r"\((\d+)/(\d+)\) downloading (\S+)")
     PCT = re.compile(r"\s(\d{1,3})%\s")
     CHECK = re.compile(r"verifying checksums")
 
-    def __init__(self):
+    def __init__(self, sizes: dict | None = None, files: list | None = None):
         self.i, self.n, self.name = 0, 1, ""
+        self.sizes, self.files = sizes or {}, files
 
     def feed(self, line: str):
         if m := self.FILE.search(line):
@@ -48,7 +53,11 @@ class WgetParser:
         return None
 
     def _pct(self, file_pct: int) -> int:
-        return min(99, int(((self.i - 1) + file_pct / 100) / self.n * 100))
+        if not self.files:
+            return min(99, int(((self.i - 1) + file_pct / 100) / self.n * 100))
+        w = [self.sizes.get(f, 100) for f in self.files]
+        done = sum(w[:self.i - 1]) + w[self.i - 1] * file_pct / 100 if self.i <= len(w) else sum(w)
+        return min(99, int(done / sum(w) * 100))
 
     def hide(self, line: str) -> bool:
         # wget prints a dot-progress line every 32 MB; keep only every 10th

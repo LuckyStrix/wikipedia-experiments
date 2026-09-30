@@ -126,7 +126,7 @@ class PipelineRunner:
         log(" ".join(cmd), "header")
         if rec:
             rec.stage_started(st.key, cmd)
-        parser = st.parser()
+        parser = st.parser(s)
         t0 = time.monotonic()
         try:
             self._proc = subprocess.Popen(

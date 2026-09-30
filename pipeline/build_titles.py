@@ -17,6 +17,7 @@ import time
 import numpy as np
 
 from wikiexp import paths
+from wikiexp import progress as prog
 from wikiexp.progress import progress
 
 SCHEMA = """
@@ -46,6 +47,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-redirects", action="store_true", help="index article titles only")
     args = ap.parse_args()
+    prog.start("titles")
 
     src = sqlite3.connect(f"file:{paths.DB}?mode=ro", uri=True)
     indptr = np.load(paths.GRAPH / "in_indptr.npy")

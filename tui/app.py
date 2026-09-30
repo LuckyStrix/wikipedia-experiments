@@ -150,7 +150,7 @@ class WikiApp(App):
         self.call_after_refresh(self._fit_log)
         self.set_interval(1, self._tick)
         self.set_interval(EVENT_POLL, self._drain_events)
-        self.set_interval(15, self._periodic_refresh)
+        self.set_interval(3, self._periodic_refresh)
         self.refresh_status()
         self.log_pane.add("Ready. Stages already done are shown in green. Press r to run the "
                           "remaining stages, or Run on a card.", "info")
@@ -168,24 +168,31 @@ class WikiApp(App):
                 ok = False
             if ok:
                 done.add(st.key)
-            if card.state == "running":
+            if card.state == "running" and not card.external:
+                continue   # this app is running it; the runner reports its state
+            other = st.running_elsewhere()
+            if other:
+                live = st.progress_of(self.settings, other)
+                card.tooltip = f"Started outside this app (process {other})"
+                card.set_state("running", (live[1] if live else "Running") +
+                               " · outside app", external=True)
+                if live:
+                    card.set_progress(live[0], card.status)
                 continue
+            if card.external:           # the outside run just finished
+                card.set_state("done" if ok else "waiting")
             if ok:
                 card.set_state("done", "Done")
             elif card.state == "done":
                 card.set_state("waiting")
-            elif card.state in ("waiting", "failed"):
-                other = st.running_elsewhere()
+            elif card.state == "waiting":
                 missing = st.missing_inputs(self.settings)
                 hint = st.hint(self.settings) if st.hint else ""
-                if other:
-                    status = f"Running outside the app (pid {other})"
-                elif missing:
+                if missing:
                     status = "Needs " + ", ".join(missing[:2]) + ("…" if len(missing) > 2 else "")
                 else:
                     status = hint or "Ready to run"
-                if card.state == "waiting" or other:
-                    card.set_state("waiting", status)
+                card.set_state("waiting", status)
         names = {st.key: st.name for st in self.stages}
         for ex in EXPERIMENTS:
             need = [names.get(k, k) for k in ex.requires if k not in done]

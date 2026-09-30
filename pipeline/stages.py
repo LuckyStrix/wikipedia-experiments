@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping
 
+from wikiexp import progress as prog
 from wikiexp.paths import ROOT
 
 from .parsers import ProgressParser, WgetParser
@@ -26,6 +27,11 @@ CORE_DUMPS = ["page.sql.gz", "redirect.sql.gz", "linktarget.sql.gz", "pagelinks.
 EXTRA_DUMPS = ["categorylinks.sql.gz", "category.sql.gz", "geo_tags.sql.gz", "page_props.sql.gz",
                "langlinks.sql.gz"]
 TEXT_DUMPS = ["pages-articles-multistream-index.txt.bz2", "pages-articles-multistream.xml.bz2"]
+# approximate compressed sizes in MB (2026-09 enwiki), to weight the download's progress bar
+DUMP_MB = {"page.sql.gz": 2362, "redirect.sql.gz": 187, "linktarget.sql.gz": 1396,
+           "pagelinks.sql.gz": 7087, "categorylinks.sql.gz": 2577, "category.sql.gz": 35,
+           "geo_tags.sql.gz": 53, "page_props.sql.gz": 471, "langlinks.sql.gz": 582,
+           "pages-articles-multistream-index.txt.bz2": 284, "pages-articles-multistream.xml.bz2": 26843}
 GRAPH_FILES = ["idx_to_page_id.npy", "out_indptr.npy", "out_indices.npy", "in_indptr.npy",
                "in_indices.npy"]
 
@@ -79,13 +85,14 @@ class Stage:
     inputs: Callable[[Mapping], list[Path]]
     outputs: Callable[[Mapping], list[Path]]
     summary: Callable[[Mapping], list[str]]
-    parser: Callable[[], object] = ProgressParser
+    parser: Callable[[Mapping], object] = ProgressParser   # called with the settings
     env: Callable[[Mapping], dict] = field(default=lambda s: {})
     done_check: Callable[[Mapping], bool] | None = None   # default: all outputs exist
     tools: tuple[str, ...] = ()                            # programs that must be on PATH
     posix_only: bool = False
     signature: str = ""       # text in the command line of a running copy (to detect one started elsewhere)
     hint: Callable[[Mapping], str] | None = None            # extra status while not done
+    live_progress: Callable[[Mapping, int], tuple[int, str] | None] | None = None  # for a copy running elsewhere
 
     def missing_inputs(self, s: Mapping) -> list[str]:
         if self.posix_only and os.name != "posix":
@@ -97,6 +104,15 @@ class Stage:
     def running_elsewhere(self, exclude_pids: set[int] = frozenset()) -> int | None:
         """PID of a copy of this stage running outside this app (e.g. started from a terminal)."""
         return find_process(self.signature, exclude_pids) if self.signature else None
+
+    def progress_of(self, s: Mapping, pid: int) -> tuple[int, str] | None:
+        """(pct, text) of a copy running elsewhere with this PID, if it reports any."""
+        if self.live_progress is not None:
+            return self.live_progress(s, pid)
+        got = prog.read(self.key, data_dir(s))
+        if got and got[2] == pid:
+            return got[0], got[1]
+        return None
 
     def is_done(self, s: Mapping) -> bool:
         if self.done_check is not None:
@@ -156,6 +172,31 @@ def download_hint(s: Mapping) -> str:
     return f"{n} of {len(files)} files verified" if n else ""
 
 
+def download_parser(s: Mapping) -> WgetParser:
+    return WgetParser(DUMP_MB, [f for f in download_files(s) if f != "sha1sums.txt"])
+
+
+def download_live_progress(s: Mapping, pid: int) -> tuple[int, str] | None:
+    """Progress of a download running elsewhere, from the end of download.log."""
+    log = dumps_dir(s) / "download.log"
+    try:
+        with open(log, "rb") as f:
+            f.seek(max(0, log.stat().st_size - 256_000))
+            lines = f.read().decode(errors="replace").splitlines()
+    except OSError:
+        return None
+    files = [f for f in download_files(s) if f != "sha1sums.txt"]
+    parser = download_parser(s)
+    got = None
+    for line in lines:
+        m = re.search(r"downloading (\S+)", line)
+        if m and "(" not in line.split("downloading")[0][-8:] and m.group(1) in files:
+            # older log lines have no "(i/N)": number them from the file list
+            line = f"({files.index(m.group(1)) + 1}/{len(files)}) downloading {m.group(1)}"
+        got = parser.feed(line) or got
+    return got
+
+
 def download_summary(s: Mapping) -> list[str]:
     ok = verified_downloads(s)
     lines = [f"From https://dumps.wikimedia.org/enwiki/{s['dump_date']}/ into {dumps_dir(s)}", ""]
@@ -202,12 +243,13 @@ STAGES: list[Stage] = [
         inputs=lambda s: [],
         outputs=lambda s: [dump_file(s, f) for f in download_files(s)],
         summary=download_summary,
-        parser=WgetParser,
+        parser=download_parser,
         done_check=download_done,
         tools=("bash", "wget", "sha1sum"),
         posix_only=True,
         signature="download.sh",
         hint=download_hint,
+        live_progress=download_live_progress,
     ),
     Stage(
         key="core", name="Build core database",

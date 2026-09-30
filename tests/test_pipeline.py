@@ -39,6 +39,13 @@ def test_invalid_dump_date():
 
 # ── parsers ──────────────────────────────────────────────────────────────────
 
+def test_wget_parser_weights_by_size():
+    p = WgetParser({"small": 100, "big": 900}, ["small", "big"])
+    assert p.feed("(1/2) downloading small")[0] == 0
+    assert p.feed("(2/2) downloading big")[0] == 10
+    assert p.feed(" 1K ........ 50% 5M 1s")[0] == 55
+
+
 def test_wget_parser():
     p = WgetParser()
     assert p.feed("[2026-09-30 18:00:00] (2/4) downloading page.sql.gz") == (25, "page.sql.gz (2/4)")

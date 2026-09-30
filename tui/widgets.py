@@ -45,6 +45,7 @@ class StageCard(Vertical):
         self.state = "waiting"
         self.status = DEFAULT_STATUS["waiting"]
         self.started = 0.0
+        self.external = False     # running, but started outside this app
         self.border_title = f"{ICONS['waiting']} {self.stage_name}"
         self.tooltip = description
 
@@ -55,16 +56,21 @@ class StageCard(Vertical):
             yield Button("Run", compact=True, classes="run-stage")
             yield Button("View", compact=True, classes="view-stage")
 
-    def set_state(self, state: str, status: str = "") -> None:
+    def set_state(self, state: str, status: str = "", external: bool = False) -> None:
+        was_external, self.external = self.external, external
+        if state == self.state and external and was_external:
+            self.status = status or self.status   # still running elsewhere: keep the bar as it is
+            self.refresh_detail()
+            return
         if state != self.state:
-            self.remove_class(self.state)
+            self.remove_class(self.state, "-has-progress")
             self.add_class(state)
             self.state = state
             self.border_title = f"{ICONS[state]} {self.stage_name}"
         self.status = status or DEFAULT_STATUS[state]
         bar = self.query_one(ProgressBar)
         if state == "running":
-            self.started = time.monotonic()
+            self.started = 0.0 if external else time.monotonic()
             bar.update(total=None, progress=0)     # indeterminate until progress arrives
         elif state == "done":
             bar.update(total=100, progress=100)
@@ -76,6 +82,7 @@ class StageCard(Vertical):
     def set_progress(self, pct: int, text: str = "") -> None:
         if self.state != "running":
             return
+        self.add_class("-has-progress")
         self.query_one(ProgressBar).update(total=100, progress=pct)
         if text:
             self.status = text
