@@ -27,7 +27,6 @@ import json
 import multiprocessing as mp
 import os
 import re
-import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -311,7 +310,7 @@ _REF_OPEN = re.compile(r"<ref\b[^>/]*>.*\Z", re.S | re.I)     # unterminated <re
 _INNER_TEMPLATE = re.compile(r"\{\{([^{}]*)\}\}")
 _PROTECT_LINK_PIPES = re.compile(r"\[\[[^\[\]]*\]\]")
 _MAGIC = re.compile(r"__[A-Z_]+__")
-_INCLUDE_TAGS = re.compile(r"</?(?:noinclude|includeonly|onlyinclude)\s*>", re.I)
+_INCLUDE_TAGS = re.compile(r"</?(?:noinclude|includeonly|onlyinclude|nowiki)\s*>", re.I)
 _LIST_MARK = re.compile(r"^[*:;]+\s*")
 _APOSTROPHES = re.compile(r"'{2,}")      # bold/italic marks left behind when their content was a dropped template
 _SPACES = re.compile("[ \t\u00a0\u2000-\u200a\u202f]+")

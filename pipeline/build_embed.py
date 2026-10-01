@@ -130,7 +130,7 @@ def embed_shards(out_dir, leads_path, embedder, model_name, limit=0, shard_size=
     return total, state
 
 
-def build_index(out_dir, state, total, model_name, dim=None, limit=0, say=log, nprobe=NPROBE):
+def build_index(out_dir, state, total, model_name, limit=0, say=log, nprobe=NPROBE):
     """faiss index + page_ids.npy + meta.json from the finished shards."""
     import faiss
     shards = out_dir / "shards"

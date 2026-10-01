@@ -78,7 +78,10 @@ class SentenceTransformerEmbedder:
             if self._model is None:
                 from sentence_transformers import SentenceTransformer
                 self.device = resolve_device(self.device_name)
-                m = SentenceTransformer(self.model_name, device=self.device)
+                try:    # offline first: no network round trips (or hangs) when the model is already cached
+                    m = SentenceTransformer(self.model_name, device=self.device, local_files_only=True)
+                except Exception:
+                    m = SentenceTransformer(self.model_name, device=self.device)   # first use: download
                 m.max_seq_length = min(MAX_SEQ_LENGTH, m.max_seq_length or MAX_SEQ_LENGTH)
                 if self.device.startswith("cuda"):
                     m.half()

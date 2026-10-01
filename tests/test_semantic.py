@@ -252,7 +252,7 @@ def test_sentence_transformer_embedder_applies_the_query_prefix(monkeypatch):
 
     import sys
     import types
-    fake = types.SimpleNamespace(SentenceTransformer=lambda name, device: FakeModel())
+    fake = types.SimpleNamespace(SentenceTransformer=lambda name, device, **kw: FakeModel())
     monkeypatch.setitem(sys.modules, "sentence_transformers", fake)
     e = semantic.SentenceTransformerEmbedder("BAAI/bge-small-en-v1.5", device="cpu")
     e.encode(["where"], query=True)
@@ -394,3 +394,21 @@ async def test_manual_embed_card_explains_itself(tmp_path, wt):
         app.refresh_status()
         assert "run on a GPU machine" in app.cards["embed"].status
         assert app.cards["text"].state == "done"
+
+
+def test_model_loads_from_cache_first_and_downloads_only_if_missing(monkeypatch):
+    import sys
+    import types
+    calls = []
+
+    class FakeModel:
+        max_seq_length = 512
+
+    def factory(name, device, **kw):
+        calls.append(kw)
+        if kw.get("local_files_only"):
+            raise OSError("not cached")
+        return FakeModel()
+    monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=factory))
+    semantic.SentenceTransformerEmbedder("some/model", device="cpu").model
+    assert calls == [{"local_files_only": True}, {}]

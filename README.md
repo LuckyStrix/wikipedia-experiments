@@ -157,7 +157,7 @@ Use the app's stage cards, or run the steps directly:
 ```bash
 python -m pipeline.build_core     # needs the 4 required dumps; ~1 hour, ~16 GB RAM peak
 python -m pipeline.build_titles   # needs wiki.sqlite; title search index (~15 minutes)
-python -m pipeline.build_text     # needs the text dumps + core; clean intro of every article (~40 minutes)
+python -m pipeline.build_text     # needs the text dumps + core; clean intro of every article (~20 minutes, 6 workers)
 python -m pipeline.build_embed    # needs text; sentence embeddings + faiss index. Run on a GPU machine
 ```
 

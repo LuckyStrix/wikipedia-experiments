@@ -197,6 +197,7 @@ def test_sections():
     ("* one\n* two\n# three", "one\ntwo\nthree"),
     ("text <!-- gone --> more <!-- unterminated", "text more"),
     ("unbalanced {{template and [[link", "unbalanced template and link"),
+    ("a <nowiki>[[x]]</nowiki> b", "a x b"),
     ("{{pi}} is '''{{pi}}'''", "π is π"),
     ("AT&amp;T &hairsp;x", "AT&T x"),
 ])
