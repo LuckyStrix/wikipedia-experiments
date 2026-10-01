@@ -94,6 +94,7 @@ class Stage:
     signature: str = ""       # text in the command line of a running copy (to detect one started elsewhere)
     hint: Callable[[Mapping], str] | None = None            # extra status while not done
     live_progress: Callable[[Mapping, int], tuple[int, str] | None] | None = None  # for a copy running elsewhere
+    manual: bool = False      # "Run all" skips it (e.g. needs a GPU); start it from its own card
 
     def missing_inputs(self, s: Mapping) -> list[str]:
         if self.posix_only and os.name != "posix":
@@ -241,6 +242,17 @@ def geo_path(s: Mapping) -> Path:
 def geo_summary(s: Mapping) -> list[str]:
     p = geo_path(s)
     lines = [f"{p.name}: {_size(p)}"]
+def text_dir(s: Mapping) -> Path:
+    return data_dir(s) / "text"
+
+
+def search_dir(s: Mapping) -> Path:
+    return data_dir(s) / "search"
+
+
+def text_summary(s: Mapping) -> list[str]:
+    p = text_dir(s) / "leads.sqlite"
+    lines = [f"{p.relative_to(data_dir(s))}: {_size(p)}"]
     if p.exists():
         with sqlite3.connect(f"file:{p}?mode=ro", uri=True) as db:
             lines += [f"{k}: {v}" for k, v in db.execute("SELECT key, value FROM meta")]
@@ -266,6 +278,36 @@ def centrality_summary(s: Mapping) -> list[str]:
 def centrality_command(s: Mapping) -> list[str]:
     return [PY, "-m", "pipeline.build_centrality", "--damping", str(s["centrality_damping"]).strip(),
             *([] if s["centrality_reverse"] else ["--no-reverse"])]
+
+
+def _embed_meta(s: Mapping) -> dict:
+    import json
+    try:
+        return json.loads((search_dir(s) / "meta.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def embed_outputs(s: Mapping) -> list[Path]:
+    return [search_dir(s) / f for f in ("index.faiss", "page_ids.npy", "meta.json")]
+
+
+def embed_summary(s: Mapping) -> list[str]:
+    lines = [f"{p.relative_to(data_dir(s))}: {_size(p)}" for p in embed_outputs(s)]
+    meta = _embed_meta(s)
+    shards = list((search_dir(s) / "shards").glob("emb_*.npy"))
+    if shards and not meta:
+        lines += ["", f"unfinished run: {len(shards)} shard(s) embedded; run again to continue"]
+    lines += ["", *(f"{k}: {v}" for k, v in meta.items())]
+    if meta and (meta.get("model") != str(s["embed_model"]).strip() or meta.get("limit") != int(str(s["embed_limit"]) or 0)):
+        lines += ["", "note: built with a different model or article limit than the current settings"]
+    return lines
+
+
+def embed_hint(s: Mapping) -> str:
+    shards = len(list((search_dir(s) / "shards").glob("emb_*.npy")))
+    return (f"{shards} shard(s) embedded so far; " if shards else "") + \
+        "manual: run on a GPU machine (Run all skips it)"
 
 
 PY = sys.executable
@@ -322,6 +364,28 @@ STAGES: list[Stage] = [
         outputs=lambda s: [geo_path(s)],
         summary=geo_summary,
         signature="pipeline.build_geo",
+    ),
+    Stage(
+        key="text", name="Extract article text",
+        description="Clean intro of every article from the text dump -> text/leads.sqlite.",
+        command=lambda s: [PY, "-m", "pipeline.build_text", "--lead-chars", str(s["text_lead_chars"])],
+        inputs=lambda s: [dump_file(s, f) for f in TEXT_DUMPS] + core_outputs(s),
+        outputs=lambda s: [text_dir(s) / "leads.sqlite"],
+        summary=text_summary,
+        signature="pipeline.build_text",
+    ),
+    Stage(
+        key="embed", name="Embed articles for search",
+        description="Manual: run on a GPU machine. Sentence embeddings of every article -> search/.",
+        command=lambda s: [PY, "-m", "pipeline.build_embed", "--model", str(s["embed_model"]).strip(),
+                           "--device", str(s["embed_device"]).strip(), "--batch-size", str(s["embed_batch"]),
+                           "--limit", str(s["embed_limit"])],
+        inputs=lambda s: [text_dir(s) / "leads.sqlite"],
+        outputs=embed_outputs,
+        summary=embed_summary,
+        signature="pipeline.build_embed",
+        hint=embed_hint,
+        manual=True,
     ),
 ]
 

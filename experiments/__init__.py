@@ -18,4 +18,6 @@ EXPERIMENTS = [
                ("core", "titles", "geo"), "experiments.nearby.screen:NearbyScreen"),
     Experiment("centrality", "Centrality", "PageRank leaderboard, article lookup and over/under-rated articles.",
                ("core", "titles", "centrality"), "experiments.centrality.screen:CentralityScreen"),
+    Experiment("semantic_search", "Semantic search", "Find articles by meaning, not keywords.",
+               ("text", "embed"), "experiments.semantic_search.screen:SemanticSearchScreen"),
 ]

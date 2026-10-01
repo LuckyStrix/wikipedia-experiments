@@ -86,6 +86,17 @@ python -m experiments.centrality surprises
 
 Other experiments can rank articles by notability with `wikiexp.centrality.Centrality`.
 
+### Semantic search
+
+Opens from the sidebar once the `text` and `embed` stages are done. Type a description in your own
+words ("that battle where the weather decided everything") and get the articles closest in meaning,
+with their score and intro. Arrow keys browse the results, `ctrl+o` reads the whole article (cleaned
+from the dump), `ctrl+l` starts a new query. Also on the command line:
+
+```bash
+python -m experiments.semantic_search "that battle where the weather decided everything" -k 10
+```
+
 ## Layout
 
 ```
@@ -93,7 +104,8 @@ app.py        starts the terminal app
 pipeline/     UI-free core: stages, settings registry, runner, progress parsers, run records,
               and the build scripts themselves (download.sh, build_core.py, build_titles.py)
 tui/          the Textual app: stage cards, settings form, log, dialogs, title picker
-wikiexp/      shared library: paths, dump readers, database/graph access, title search
+wikiexp/      shared library: paths, dump readers, database/graph access, title search,
+              article wikitext + cleaning (wikitext.py), semantic search (semantic.py)
 experiments/  one folder per experiment (see experiments/README.md)
 tools/        sync.py: move data between machines over SSH
 tests/        pytest suite; uses a tiny hand-made Wikipedia, no dumps needed
@@ -178,7 +190,14 @@ python -m pipeline.build_core     # needs the 4 required dumps; ~1 hour, ~16 GB 
 python -m pipeline.build_titles   # needs wiki.sqlite; title search index (~15 minutes)
 python -m pipeline.build_geo      # needs wiki.sqlite + geo_tags dump (langlinks optional); places index (~1 minute)
 python -m pipeline.build_centrality   # needs data/graph; PageRank etc. (~25 minutes, ~4 GB RAM)
+python -m pipeline.build_text     # needs the text dumps + core; clean intro of every article (~20 minutes, 6 workers)
+python -m pipeline.build_embed    # needs text; sentence embeddings + faiss index. Run on a GPU machine
 ```
+
+The last stage is **manual**: the app's *Run all* skips it (embedding 7.2M articles takes days on a CPU
+and about an hour on a GPU), and its card says so; start it from its own **Run** button or the command
+line. See [experiments/semantic_search](experiments/semantic_search/README.md) for how to run it on a
+GPU machine and bring the result back.
 
 Parsing the dumps is spread over several processes on Linux/macOS (all but two cores, up to 8; set
 `WIKI_WORKERS=n` to change it). It roughly halves the core build on a laptop; machines that hold
@@ -223,6 +242,43 @@ db, g = core.connect(), core.Graph()
 i = g.idx(core.resolve(db, "USA"))       # redirects resolve to "United States"
 print(len(g.out_links(i)), len(g.in_links(i)))
 ```
+
+### data/text/
+
+`leads.sqlite` (from `pipeline.build_text`, about 7 GB): one row per article in popularity order.
+
+| table | columns | notes |
+|---|---|---|
+| `leads` | `rank`, `page_id`, `idx`, `title`, `lead`, `disambig` | `rank` 0 is the most-linked article, so `ORDER BY rank LIMIT n` reads the n best-known first; `lead` is the plain-text intro (no templates, references, images or tables), cut at a sentence end to the *Lead length* setting (default 1200 characters); `disambig` = 1 for disambiguation and set-index pages, which are kept but flagged |
+| `meta` | `key`, `value` | dump date, lead length, counts |
+
+Also here: `index_*.npy`, a compact cache of the 284 MB dump index so one article's wikitext can be
+fetched in about 40 ms with `wikiexp.wikitext.WikiText().fetch(page_id)` (see below).
+
+```python
+from wikiexp import wikitext as W
+wt = W.WikiText()                       # opens the cached index instantly
+raw = wt.fetch(core.resolve(db, "Battle of Waterloo"))     # wikitext of one article
+print(W.to_text(raw)[:500])             # clean plain text; W.sections(raw) -> [(heading, text), ...]
+for page_id, title, lead in wt.iter_pages(fn=lambda p: W.lead(p.text)):   # all articles, in parallel
+    ...
+```
+
+### data/search/
+
+`index.faiss` (inner-product faiss index of the normalised embeddings of `title: lead`), `page_ids.npy`
+(the page_id of each vector) and `meta.json` (model, dimensions, count, article limit, index type),
+built by `pipeline.build_embed` and used through `wikiexp.semantic.SemanticSearch`:
+
+```python
+from wikiexp.semantic import SemanticSearch
+ss = SemanticSearch()
+for hit in ss.search("that battle where the weather decided everything", k=5):
+    print(hit.score, hit.title, hit.snippet)
+```
+
+While it runs, `shards/` holds float16 embeddings and `progress.json` records which are finished, so a
+stopped run resumes where it left off.
 
 ## Working across machines
 

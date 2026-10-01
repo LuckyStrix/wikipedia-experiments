@@ -77,6 +77,22 @@ REGISTRY: list[Setting] = [
             ("stages", "centrality", "reverse"),
             help="A second score on the reversed graph that finds hub and overview articles "
                  "that link out to many important ones. Adds about as long again to the build."),
+    Setting("text_lead_chars", STR, "1200", "Build", "Article text", "Lead length (characters)",
+            ("stages", "text", "lead_chars"), pattern=r"\d{2,5}",
+            hint="cut at a sentence end",
+            help="Longest introduction kept per article. Only this much is embedded for search."),
+    Setting("embed_model", STR, "BAAI/bge-small-en-v1.5", "Build", "Search embeddings", "Embedding model",
+            ("stages", "embed", "model"), pattern=r"\S+",
+            help="Any sentence-transformers model name. Changing it means re-embedding everything."),
+    Setting("embed_device", STR, "auto", "Build", "Search embeddings", "Device",
+            ("stages", "embed", "device"), pattern=r"auto|cpu|cuda(:\d+)?", hint="auto, cpu or cuda",
+            help="auto uses the GPU when torch can see one. Embedding all 7.2M articles on a CPU "
+                 "takes days; use a GPU machine."),
+    Setting("embed_batch", STR, "128", "Build", "Search embeddings", "Batch size", ("stages", "embed", "batch"),
+            pattern=r"\d{1,5}", help="Articles per forward pass. Lower it if the GPU runs out of memory."),
+    Setting("embed_limit", STR, "0", "Build", "Search embeddings", "Most popular articles",
+            ("stages", "embed", "limit"), pattern=r"\d{1,9}", hint="0 = all",
+            help="Embed only the N most-linked articles (0 = all of them)."),
 ]
 
 BY_KEY = {s.key: s for s in REGISTRY}
