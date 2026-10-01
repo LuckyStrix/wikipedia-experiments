@@ -410,5 +410,13 @@ def test_model_loads_from_cache_first_and_downloads_only_if_missing(monkeypatch)
             raise OSError("not cached")
         return FakeModel()
     monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=factory))
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.delenv("SENTENCE_TRANSFORMERS_HOME", raising=False)
     semantic.SentenceTransformerEmbedder("some/model", device="cpu").model
-    assert calls == [{"local_files_only": True}, {}]
+    cache = str(semantic.paths.DATA / "models")    # models are kept with the data
+    assert calls == [{"cache_folder": cache, "local_files_only": True}, {"cache_folder": cache}]
+
+
+def test_user_model_cache_wins(monkeypatch, tmp_path):
+    monkeypatch.setenv("HF_HOME", str(tmp_path))
+    assert semantic.model_cache() is None

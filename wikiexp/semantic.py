@@ -70,12 +70,12 @@ def model_cache() -> str | None:
     don't depend on ~/.cache being writable. A user-set HF_HOME / SENTENCE_TRANSFORMERS_HOME wins.
     Sets HF_HOME too (Hugging Face's downloader keeps its own cache there), which only takes effect
     if huggingface_hub hasn't been imported yet - so call this before importing sentence_transformers."""
-    if os.environ.get("HF_HOME") or os.environ.get("SENTENCE_TRANSFORMERS_HOME"):
+    cache = str(paths.DATA / "models")
+    if os.environ.get("HF_HOME", cache) != cache or os.environ.get("SENTENCE_TRANSFORMERS_HOME"):
         return None
-    cache = paths.DATA / "models"
     if "huggingface_hub" not in sys.modules:
-        os.environ["HF_HOME"] = str(cache)
-    return str(cache)
+        os.environ["HF_HOME"] = cache
+    return cache
 
 
 class SentenceTransformerEmbedder:
