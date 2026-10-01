@@ -36,6 +36,7 @@ import mwparserfromhell
 import numpy as np
 
 from . import paths
+from . import wikitemplates as T
 from .sqldump import default_workers
 
 DUMP_NAME = "pages-articles-multistream.xml.bz2"
@@ -318,8 +319,7 @@ _NON_ARTICLE_LINK = re.compile(r"^\s*(file|image|media|category)\s*:", re.I)
 _INTERWIKI = re.compile(r"^\s*(?:[a-z]{2,3}|simple|zh-[a-z-]+|be-tarask|roa-[a-z]+|fiu-vro|map-bms|"
                         r"bat-smg|nds-nl|cbk-zam):[^\s]", re.I)
 
-MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
-          "October", "November", "December"]
+MONTHS = T.MONTHS
 
 
 def _split_args(body: str) -> tuple[str, list[str], dict[str, str]]:
@@ -336,99 +336,10 @@ def _split_args(body: str) -> tuple[str, list[str], dict[str, str]]:
     return parts[0].strip(), pos, named
 
 
-def _first(pos, named, *keys):
-    return pos[0] if pos else next((named[k] for k in keys if named.get(k)), "")
-
-
-_NUM = re.compile(r"[-+\d.,/ ]+")
-_RANGE = {"to", "and", "or", "by", "x", "×", "-", "–", "+", "±", "to about", "and about"}
-
-
-def _convert(pos, named):
-    """{{convert|10|to|20|km|mi}} -> "10 to 20 km": the numbers up to and including the first unit."""
-    out = []
-    for tok in pos:
-        out.append(tok)
-        if not (_NUM.fullmatch(tok) or tok in _RANGE):
-            break
-    return " ".join(out)
-
-
-def _as_of(pos, named):
-    if named.get("alt"):
-        return named["alt"]
-    if not pos:
-        return ""
-    word = "since" if named.get("since") == "y" else "as of"
-    return f"{word if named.get('lc') == 'y' else word.capitalize()} {pos[0]}"
-
-
-def _nihongo(pos, named):
-    """{{nihongo|English|kanji|romaji}}: just the English text (plus the template's `post=` comma)."""
-    return (pos[0] if pos else "") + named.get("post", "")
-
-
-def _date(pos, named):
-    nums = [int(p) for p in pos if p.isdigit()]
-    if not nums:
-        return ""
-    if len(nums) >= 3 and 1 <= nums[1] <= 12:
-        return f"{MONTHS[nums[1] - 1]} {nums[2]}, {nums[0]}"
-    if len(nums) == 2 and 1 <= nums[1] <= 12:
-        return f"{MONTHS[nums[1] - 1]} {nums[0]}"
-    return str(nums[0])
-
-
-def _lang(pos, named):
-    return pos[1] if len(pos) > 1 else named.get("text", "")
-
-
-_DATE_NAMES = ("birth date and age", "birth date", "death date and age", "death date", "bda", "dob",
-               "birth-date", "start date", "end date", "start date and age", "end date and age",
-               "birth year and age", "death year and age", "birth based on age as of date")
-_FIRST_ARG = ("nowrap", "nobr", "small", "smaller", "larger", "big", "huge", "tiny", "em", "strong",
-              "sc", "smallcaps", "abbr", "sup", "sub", "lower", "upper", "math", "mvar", "var", "nobold",
-              "noitalic", "no wrap", "nowrap begin", "bold", "italic", "italics", "bi", "b", "i", "u", "mono",
-              "ill", "interlanguage link", "interlanguage link multi", "iw", "link-interwiki",
-              "linktext", "lang-en", "unicode", "script", "wikt", "sic", "not a typo", "typo", "tooltip", "ruby")
-_TEMPLATES: dict[str, Callable] = {
-    "lang": _lang, "langx": _lang, "-\"": lambda p, n: '"', "\"": lambda p, n: '"', "-'": lambda p, n: "'",
-    "pi": lambda p, n: "π", "tau": lambda p, n: "τ", "!": lambda p, n: "|", "=": lambda p, n: "=", "transl": lambda p, n: p[-1] if p else "", "transliteration": lambda p, n: p[-1] if p else "",
-    "nihongo": _nihongo, "nihongo foot": _nihongo, "nihongo2": _nihongo, "nihongo3": _nihongo,
-    "convert": _convert, "cvt": _convert, "val": lambda p, n: (p[0] + (" " + n["u"] if n.get("u") else "")) if p else "",
-    "circa": lambda p, n: "c. " + p[0] if p else "c.", "c.": lambda p, n: "c. " + p[0] if p else "c.",
-    "frac": lambda p, n: "/".join(p[:2]) if len(p) > 1 else (p[0] if p else ""),
-    "sfrac": lambda p, n: "/".join(p[-2:]) if len(p) > 1 else (p[0] if p else ""),
-    "snd": lambda p, n: " – ", "spnd": lambda p, n: " – ", "spaced ndash": lambda p, n: " – ",
-    "spaced en dash": lambda p, n: " – ", "ndash": lambda p, n: "–", "mdash": lambda p, n: "—",
-    "nbsp": lambda p, n: " ", "spaces": lambda p, n: " ", "'": lambda p, n: "'", "-": lambda p, n: "",
-    "as of": _as_of,
-    "quote": lambda p, n: _first(p, n, "text", "quote"), "cquote": lambda p, n: _first(p, n, "text", "quote"),
-    "blockquote": lambda p, n: _first(p, n, "text", "quote"), "quotation": lambda p, n: _first(p, n, "text", "quote"),
-    "plainlist": lambda p, n: p[0] if p else "", "flatlist": lambda p, n: p[0] if p else "",
-    "unbulleted list": lambda p, n: ", ".join(p), "ubl": lambda p, n: ", ".join(p),
-    "hlist": lambda p, n: ", ".join(p), "flag": lambda p, n: p[0] if p else "",
-    "sortname": lambda p, n: " ".join(p[:2]), "sort": lambda p, n: p[1] if len(p) > 1 else "",
-    "us$": lambda p, n: "US$" + p[0] if p else "", "usd": lambda p, n: "US$" + p[0] if p else "",
-    "gbp": lambda p, n: "£" + p[0] if p else "", "£": lambda p, n: "£" + p[0] if p else "",
-    "eur": lambda p, n: "€" + p[0] if p else "", "€": lambda p, n: "€" + p[0] if p else "",
-}
-_TEMPLATES.update({n: (lambda p, n_: _date(p, n_)) for n in _DATE_NAMES})
-_TEMPLATES.update({n: (lambda p, n_: p[0] if p else n_.get("1", "")) for n in _FIRST_ARG})
-
-
 def _render_template(m: re.Match) -> str:
+    """One innermost `{{...}}` -> its text (see wikitemplates), or nothing for templates that carry none."""
     name, pos, named = _split_args(m.group(1))
-    key = re.sub(r"[\s_]+", " ", name).strip().lower()
-    h = _TEMPLATES.get(key)
-    if h is None and key.startswith("lang-"):
-        return pos[0] if pos else named.get("text", "")
-    if h is None:
-        return ""
-    try:
-        return h(pos, named)
-    except Exception:
-        return ""
+    return T.render(re.sub(r"[\s_]+", " ", name).strip().lower(), pos, named) or ""
 
 
 def _drop_templates(text: str) -> str:
@@ -480,11 +391,12 @@ def _drop_tables(text: str) -> str:
     return "\n".join(out)
 
 
-_EMPTY_PARENS = [
-    (re.compile(r"\(\s*\.?\s*[;,:]\s*"), "("), (re.compile(r"\s*[;,:]\s*\)"), ")"),
+_EMPTY_PARENS = [      # what is left of "(IPA; born ...)" and "(Chinese: x; pinyin: y)" once templates are gone
+    (re.compile(r"\([ \t]*(?:\.?[ \t]*[;,:][ \t]*)+"), "("), (re.compile(r"(?:[ \t]*[;,:])+[ \t]*\)"), ")"),
+    (re.compile(r"\([ \t]*(?:or|and)[ \t]*\)"), ""),
     (re.compile(r"\(\s*[$£€]?\s*(?:million |billion |trillion )?(?:when )?adjusted for inflation\s*\)"), ""),
-    (re.compile(r"\(\s*\)|\[\s*\]"), ""), (re.compile(r"\s+([,.;:!?)])"), r"\1"),
-    (re.compile(r"\(\s+"), "("), (re.compile(r",\s*,"), ","), (re.compile(r"\s+,"), ","),
+    (re.compile(r"\(\s*\)|\[\s*\]"), ""), (re.compile(r"[ \t]+([,.;:!?)])"), r"\1"),
+    (re.compile(r"\([ \t]+"), "("), (re.compile(r",[ \t]*,"), ","),
 ]
 
 

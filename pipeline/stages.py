@@ -242,6 +242,12 @@ def geo_path(s: Mapping) -> Path:
 def geo_summary(s: Mapping) -> list[str]:
     p = geo_path(s)
     lines = [f"{p.name}: {_size(p)}"]
+    if p.exists():
+        with sqlite3.connect(f"file:{p}?mode=ro", uri=True) as db:
+            lines += [f"{k}: {v}" for k, v in db.execute("SELECT key, value FROM meta")]
+    return lines
+
+
 def text_dir(s: Mapping) -> Path:
     return data_dir(s) / "text"
 
@@ -257,6 +263,8 @@ def text_summary(s: Mapping) -> list[str]:
         with sqlite3.connect(f"file:{p}?mode=ro", uri=True) as db:
             lines += [f"{k}: {v}" for k, v in db.execute("SELECT key, value FROM meta")]
     return lines
+
+
 def centrality_dir(s: Mapping) -> Path:
     return data_dir(s) / "centrality"
 
