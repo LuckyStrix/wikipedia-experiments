@@ -1,6 +1,11 @@
 """Streaming readers for Wikimedia's MySQL dump files (*.sql.gz), without importing into MySQL."""
+import collections
+import functools
+import gc
 import gzip
 import hashlib
+import multiprocessing as mp
+import os
 import re
 import shutil
 import subprocess
@@ -81,32 +86,105 @@ def unquote(v):
     return v
 
 
-def rows(path, keep):
-    """Yield tuples of the named columns (raw bytes, strings unquoted) from a dump."""
+# ── parallel block processing ────────────────────────────────────────────────
+
+def default_workers():
+    """Parser processes to use: $WIKI_WORKERS, else all but two cores (max 8; beyond that the
+    main process, which merges results, becomes the limit)."""
+    env = os.environ.get("WIKI_WORKERS")
+    if env:
+        return max(1, int(env))
+    return max(1, min(8, (os.cpu_count() or 2) - 2))
+
+
+def map_blocks(path, fn, workers=None):
+    """Yield fn(block) for each block of the decompressed dump, in order, computed by worker processes.
+
+    fn must be a picklable top-level function (or functools.partial of one). Workers are forked, so
+    they see the parent's module globals (e.g. big numpy lookup tables) without copying them. At most
+    2 blocks per worker are in flight, so memory stays bounded however big the dump is. Falls back
+    to a plain loop with one worker, or where fork isn't available (Windows).
+    """
+    workers = workers or default_workers()
+    if workers <= 1 or "fork" not in mp.get_all_start_methods():
+        for block in blocks(path):
+            yield fn(block)
+        return
+    gc.freeze()   # keep the children's garbage collector from touching (and so copying) parent objects
+    try:
+        with mp.get_context("fork").Pool(workers) as pool:   # fork before pigz starts
+            pending = collections.deque()
+            for block in blocks(path):
+                pending.append(pool.apply_async(fn, (block,)))
+                if len(pending) >= 2 * workers:
+                    yield pending.popleft().get()
+            while pending:
+                yield pending.popleft().get()
+    finally:
+        gc.unfreeze()
+
+
+SKIP = rb"(?:NULL|'(?:[^'\\]|\\.)*'|[-0-9.eE+]+)"
+
+
+@functools.lru_cache(maxsize=32)
+def _row_re(ncols, capture):
+    """Regex for one row that captures only the columns in `capture` (creating a Python object for
+    every field of every row is most of the parsing cost)."""
+    return re.compile(rb"\(" + rb",".join(FIELD if i in capture else SKIP for i in range(ncols)) + rb"\)")
+
+
+def parse_rows(block, ncols, pick, where=None):
+    """Rows of one block as tuples of the picked column indexes; where=(index, value) filters on a
+    raw column value (e.g. only namespace b"0") before unquoting, to save work and transfer."""
+    capture = tuple(sorted(set(pick) | ({where[0]} if where else set())))
+    found = _row_re(ncols, capture).findall(block)
+    # every row starts on its own line in these dumps; fewer matches means a parse failure
+    if len(found) < block.count(b"\n(") - 1:
+        raise RuntimeError("row parse failure")
+    if len(capture) == 1:
+        found = [(f,) for f in found]
+    pos = {c: i for i, c in enumerate(capture)}
+    if where is not None:
+        col, value = pos[where[0]], where[1]
+        found = [r for r in found if r[col] == value]
+    take = [pos[i] for i in pick]
+    return [tuple(unquote(r[i]) for i in take) for r in found]
+
+
+def rows(path, keep, where=None, workers=None):
+    """Yield tuples of the named columns (raw bytes, strings unquoted) from a dump, parsed in
+    parallel. where=(column name, raw value) keeps only matching rows, e.g. ("page_namespace", b"0")."""
     cols, _ = header(path)
-    row_re = re.compile(rb"\(" + rb",".join([FIELD] * len(cols)) + rb"\)")
     pick = [cols.index(c) for c in keep]
-    for block in blocks(path):
-        found = row_re.findall(block)
-        # every row starts on its own line in these dumps; fewer matches means a parse failure
-        if len(found) < block.count(b"\n(") - 1:
-            raise RuntimeError(f"row parse failure in {path}")
-        for r in found:
-            yield tuple(unquote(r[i]) for i in pick)
+    cond = (cols.index(where[0]), where[1]) if where else None
+    fn = functools.partial(parse_rows, ncols=len(cols), pick=pick, where=cond)
+    for chunk in map_blocks(path, fn, workers):
+        yield from chunk
+
+
+_NOT_ROWS = re.compile(rb"(?m)^[^(\n].*\n?")
+_TO_COMMAS = bytes.maketrans(b";", b",")
+
+
+def parse_int_block(block, ncols):
+    """(n, ncols) int64 array from one block of an all-integer dump such as pagelinks."""
+    block = _NOT_ROWS.sub(b"", block).translate(_TO_COMMAS, b"()\n").strip(b",")
+    if not block:
+        return np.empty((0, ncols), dtype=np.int64)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # a partial parse raises instead of truncating
+        arr = np.fromstring(block, dtype=np.int64, sep=",")
+    return arr.reshape(-1, ncols)
 
 
 def int_rows(path, ncols):
-    """Yield (n, ncols) int64 arrays from an all-integer dump such as pagelinks."""
-    not_rows = re.compile(rb"(?m)^[^(\n].*\n?")
-    to_commas = bytes.maketrans(b";", b",")
+    """Yield (n, ncols) int64 arrays from an all-integer dump (single process; see map_blocks for
+    parallel processing)."""
     for block in blocks(path):
-        block = not_rows.sub(b"", block).translate(to_commas, b"()\n").strip(b",")
-        if not block:
-            continue
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")  # a partial parse raises instead of truncating
-            arr = np.fromstring(block, dtype=np.int64, sep=",")
-        yield arr.reshape(-1, ncols)
+        arr = parse_int_block(block, ncols)
+        if len(arr):
+            yield arr
 
 
 def title_text(t):

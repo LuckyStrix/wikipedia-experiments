@@ -19,7 +19,7 @@ import numpy as np
 from wikiexp import paths
 from wikiexp import progress as prog
 from wikiexp.progress import progress
-from wikiexp.sqldump import header, int_rows, rows, title_text, verify
+from wikiexp.sqldump import default_workers, header, map_blocks, parse_int_block, rows, title_text, verify
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -57,7 +57,8 @@ def load_pages():
     title_to_id = {}
     art_ids, art_titles, art_lens, redirect_ids = [], [], [], []
     for pid, ns, title, is_redirect, length in rows(
-            path, ["page_id", "page_namespace", "page_title", "page_is_redirect", "page_len"]):
+            path, ["page_id", "page_namespace", "page_title", "page_is_redirect", "page_len"],
+            where=("page_namespace", b"0")):
         if ns != b"0":
             continue
         pid = int(pid)
@@ -84,7 +85,8 @@ def resolve_redirects(title_to_id, redirect_ids, page_to_idx):
     log("reading redirect table", 23)
     hop = {}
     for rd_from, ns, title, interwiki in rows(
-            paths.dump("redirect.sql.gz"), ["rd_from", "rd_namespace", "rd_title", "rd_interwiki"]):
+            paths.dump("redirect.sql.gz"), ["rd_from", "rd_namespace", "rd_title", "rd_interwiki"],
+            where=("rd_namespace", b"0")):
         rd_from = int(rd_from)
         if ns == b"0" and not interwiki and rd_from in redirect_ids:
             target = title_to_id.get(title)
@@ -116,7 +118,7 @@ def map_linktargets(title_to_id, redirect_to_idx, page_to_idx):
         lt_to_idx[a] = np.array(idxs, dtype=np.int32)
         ids.clear(), idxs.clear()
 
-    for lt_id, ns, title in rows(path, ["lt_id", "lt_namespace", "lt_title"]):
+    for lt_id, ns, title in rows(path, ["lt_id", "lt_namespace", "lt_title"], where=("lt_namespace", b"0")):
         if ns != b"0":
             continue
         pid = title_to_id.get(title)
@@ -133,24 +135,38 @@ def map_linktargets(title_to_id, redirect_to_idx, page_to_idx):
     return lt_to_idx
 
 
+# lookup tables for pagelinks workers; set before the workers fork, so they're shared, not copied
+_LOOKUP = {}
+
+
+def _links_block(block):
+    """One block of pagelinks -> (raw row count, int64 keys of article->article links)."""
+    page_to_idx, lt_to_idx = _LOOKUP["page_to_idx"], _LOOKUP["lt_to_idx"]
+    arr = parse_int_block(block, 3)
+    n = len(arr)
+    arr = arr[(arr[:, 1] == 0) & (arr[:, 0] < len(page_to_idx)) & (arr[:, 2] < len(lt_to_idx))]
+    src = page_to_idx[arr[:, 0]]
+    dst = lt_to_idx[arr[:, 2]]
+    ok = (src >= 0) & (dst >= 0) & (src != dst)
+    return n, (src[ok].astype(np.int64) << 32) | dst[ok].astype(np.int64)
+
+
 def load_links(page_to_idx, lt_to_idx):
     """Sorted, de-duplicated int64 keys (src_idx << 32 | dst_idx)."""
-    log("reading pagelinks table (the long step)", 38)
+    log(f"reading pagelinks table (the long step; {default_workers()} parser processes)", 38)
     path = paths.dump("pagelinks.sql.gz")
     cols, _ = header(path)
     if cols != ["pl_from", "pl_from_namespace", "pl_target_id"]:
         raise RuntimeError(f"unexpected pagelinks columns: {cols}")
     parts, total = [], 0
     expected = path.stat().st_size * LINKS_PER_GZ_BYTE
-    for arr in int_rows(path, 3):
-        total += len(arr)
-        arr = arr[(arr[:, 1] == 0) & (arr[:, 0] < len(page_to_idx)) & (arr[:, 2] < len(lt_to_idx))]
-        src = page_to_idx[arr[:, 0]]
-        dst = lt_to_idx[arr[:, 2]]
-        ok = (src >= 0) & (dst >= 0) & (src != dst)
-        parts.append((src[ok].astype(np.int64) << 32) | dst[ok].astype(np.int64))
+    _LOOKUP.update(page_to_idx=page_to_idx, lt_to_idx=lt_to_idx)
+    for n, keys in map_blocks(path, _links_block):
+        total += n
+        parts.append(keys)
         if len(parts) % 50 == 0:
             log(f"  {total:,} raw links read", 38 + min(29, 29 * total / expected))
+    _LOOKUP.clear()
     keys = np.concatenate(parts)
     del parts
     if len(keys) == 0:

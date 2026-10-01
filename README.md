@@ -147,6 +147,10 @@ python -m pipeline.build_core     # needs the 4 required dumps; ~1 hour, ~16 GB 
 python -m pipeline.build_titles   # needs wiki.sqlite; title search index (~15 minutes)
 ```
 
+Parsing the dumps is spread over several processes on Linux/macOS (all but two cores, up to 8; set
+`WIKI_WORKERS=n` to change it). It roughly halves the core build on a laptop; machines that hold
+their clock speed with every core busy gain more. Writing the database is single-threaded either way.
+
 ### data/wiki.sqlite
 
 | table | columns | notes |

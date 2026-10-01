@@ -161,3 +161,35 @@ def test_sql_dump_readers(tmp_path):
     import numpy as np
     arr = np.concatenate(list(int_rows(nums, 2)))
     assert arr.tolist() == [[1, 2], [3, -4], [5, 6]]
+
+
+def test_parallel_parsing_matches_serial(tmp_path, monkeypatch):
+    import gzip
+
+    import numpy as np
+
+    from wikiexp import sqldump
+    dump = tmp_path / "p.sql.gz"
+    lines = [f"({i},{i % 3},'Title_{i}_\\'q\\'',{i % 2})" for i in range(20000)]
+    with gzip.open(dump, "wt") as f:
+        f.write("CREATE TABLE `p` (\n  `id` int NOT NULL,\n  `ns` int NOT NULL,\n  `t` varbinary(9) NOT NULL,\n"
+                "  `r` int NOT NULL\n);\nINSERT INTO `p` VALUES\n" + ",\n".join(lines) + ";\n")
+    monkeypatch.setattr(sqldump, "BLOCK", 4096)   # many small blocks
+    serial = list(sqldump.rows(dump, ["id", "t"], where=("ns", b"0"), workers=1))
+    parallel = list(sqldump.rows(dump, ["id", "t"], where=("ns", b"0"), workers=4))
+    assert parallel == serial and len(serial) == 6667
+    assert serial[1] == (b"3", b"Title_3_'q'")
+
+    ints = tmp_path / "i.sql.gz"
+    with gzip.open(ints, "wt") as f:
+        f.write("CREATE TABLE `i` (\n  `a` int NOT NULL,\n  `b` int NOT NULL\n);\nINSERT INTO `i` VALUES\n"
+                + ",\n".join(f"({i},{-i})" for i in range(30000)) + ";\n")
+    got = np.concatenate(list(sqldump.map_blocks(ints, functools_partial_int(), workers=4)))
+    assert got.tolist() == [[i, -i] for i in range(30000)]
+
+
+def functools_partial_int():
+    import functools
+
+    from wikiexp import sqldump
+    return functools.partial(sqldump.parse_int_block, ncols=2)
