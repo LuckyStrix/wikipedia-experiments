@@ -69,6 +69,14 @@ REGISTRY: list[Setting] = [
             ("stages", "titles", "redirects"),
             help="Lets searches for aliases like 'USA' or 'JFK' find the real article. Roughly "
                  "triples the index size."),
+    Setting("centrality_damping", STR, "0.85", "Build", "Centrality", "PageRank damping",
+            ("stages", "centrality", "damping"), hint="0.5 to 0.99", pattern=r"0\.\d{1,4}",
+            help="Chance that the random surfer follows a link instead of jumping to a random "
+                 "article. 0.85 is the classic value."),
+    Setting("centrality_reverse", BOOL, True, "Build", "Centrality", "Also reverse PageRank",
+            ("stages", "centrality", "reverse"),
+            help="A second score on the reversed graph that finds hub and overview articles "
+                 "that link out to many important ones. Adds about as long again to the build."),
 ]
 
 BY_KEY = {s.key: s for s in REGISTRY}
