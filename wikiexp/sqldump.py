@@ -89,8 +89,8 @@ def unquote(v):
 # ── parallel block processing ────────────────────────────────────────────────
 
 def default_workers():
-    """Parser processes to use: $WIKI_WORKERS, else all but two cores (max 8; beyond that the
-    main process, which merges results, becomes the limit)."""
+    """Parser processes to use: $WIKI_WORKERS, else all but two cores, at most 8 (more mostly adds
+    memory; on power-limited laptops even 4 can saturate the CPU)."""
     env = os.environ.get("WIKI_WORKERS")
     if env:
         return max(1, int(env))
