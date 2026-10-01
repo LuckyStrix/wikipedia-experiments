@@ -55,6 +55,22 @@ python -m experiments.six_degrees "Kevin Bacon" "Mitochondrion"
 python -m experiments.six_degrees --random
 ```
 
+### Centrality
+
+Opens once the core database, title index and centrality stage are built. Three tabs: a
+**Leaderboard** of the top articles by PageRank, in-degree or "gateway" (reverse PageRank), a
+**Look up** tab with one article's rank, percentile, score and degrees in every metric (plus its most
+notable neighbours), and **Surprises**: articles whose PageRank rank and in-degree rank disagree most.
+Enter on a table row opens that article in Look up. Also on the command line:
+
+```bash
+python -m experiments.centrality top 50 [--metric indegree]
+python -m experiments.centrality "Albert Einstein"
+python -m experiments.centrality surprises
+```
+
+Other experiments can rank articles by notability with `wikiexp.centrality.Centrality`.
+
 ## Layout
 
 ```
@@ -145,6 +161,7 @@ Use the app's stage cards, or run the steps directly:
 ```bash
 python -m pipeline.build_core     # needs the 4 required dumps; ~1 hour, ~16 GB RAM peak
 python -m pipeline.build_titles   # needs wiki.sqlite; title search index (~15 minutes)
+python -m pipeline.build_centrality   # needs data/graph; PageRank etc. (~25 minutes, ~4 GB RAM)
 ```
 
 Parsing the dumps is spread over several processes on Linux/macOS (all but two cores, up to 8; set
@@ -164,6 +181,13 @@ their clock speed with every core busy gain more. Writing the database is single
 
 Every article and redirect title in popularity order (most incoming links first), with a trigram
 full-text index. Used through `wikiexp.titles.TitleIndex` (`search`, `resolve`, `random_article`).
+
+### data/centrality/
+
+PageRank (`pagerank.npy`, float32, sums to 1), reverse PageRank (`reverse_pagerank.npy`) and, for
+PageRank, in-degree and reverse PageRank, `*rank.npy` (int32, 1 = best) and `*order.npy` (idx best
+first), all indexed by graph `idx`, plus `meta.json`. Used through `wikiexp.centrality.Centrality`
+(`rank`, `percentile`, `top`, `score`), which memory-maps them.
 
 ### data/graph/
 

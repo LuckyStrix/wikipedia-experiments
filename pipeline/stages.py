@@ -9,6 +9,7 @@ Adding a stage: append a ``Stage`` to ``STAGES``. Experiments that need it list 
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -233,6 +234,29 @@ def titles_summary(s: Mapping) -> list[str]:
     return lines
 
 
+def centrality_dir(s: Mapping) -> Path:
+    return data_dir(s) / "centrality"
+
+
+def centrality_outputs(s: Mapping) -> list[Path]:
+    return [centrality_dir(s) / "meta.json"]    # written last, so its presence means complete
+
+
+def centrality_summary(s: Mapping) -> list[str]:
+    d = centrality_dir(s)
+    lines = [f"{p.relative_to(data_dir(s))}: {_size(p)}" for p in sorted(d.glob("*.*"))]
+    try:
+        meta = json.loads((d / "meta.json").read_text())
+    except (OSError, ValueError):
+        return lines
+    return lines + ["", *(f"{k}: {v}" for k, v in meta.items())]
+
+
+def centrality_command(s: Mapping) -> list[str]:
+    return [PY, "-m", "pipeline.build_centrality", "--damping", str(s["centrality_damping"]).strip(),
+            *([] if s["centrality_reverse"] else ["--no-reverse"])]
+
+
 PY = sys.executable
 
 STAGES: list[Stage] = [
@@ -269,6 +293,15 @@ STAGES: list[Stage] = [
         outputs=lambda s: [titles_path(s)],
         summary=titles_summary,
         signature="pipeline.build_titles",
+    ),
+    Stage(
+        key="centrality", name="Compute centrality",
+        description="PageRank, in-degree ranks and reverse PageRank for every article.",
+        command=centrality_command,
+        inputs=lambda s: core_outputs(s),
+        outputs=centrality_outputs,
+        summary=centrality_summary,
+        signature="pipeline.build_centrality",
     ),
 ]
 

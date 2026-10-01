@@ -14,4 +14,6 @@ class Experiment:
 EXPERIMENTS = [
     Experiment("six_degrees", "Six Degrees", "Shortest chain of links between any two articles.",
                ("core", "titles"), "experiments.six_degrees.screen:SixDegreesScreen"),
+    Experiment("centrality", "Centrality", "PageRank leaderboard, article lookup and over/under-rated articles.",
+               ("core", "titles", "centrality"), "experiments.centrality.screen:CentralityScreen"),
 ]
