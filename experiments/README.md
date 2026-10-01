@@ -29,4 +29,8 @@ Shared code goes in `wikiexp/`:
 - `wikiexp.wikitext` — `WikiText().fetch(page_id)` (random access to one article's wikitext),
   `iter_pages()` (all articles, in parallel), `to_text()` / `sections()` / `lead()` (clean plain text)
 - `wikiexp.semantic` — `SemanticSearch().search(query, k)`: articles closest in meaning (the RAG building block)
+- `wikiexp.keyword` / `wikiexp.retrieval` — `KeywordIndex().search(q, k)` (bm25 over every title + intro) and
+  `HybridSearch().search(q, k, mode)`: meaning + words + exact titles fused (`mode` hybrid / semantic / keyword)
+- `wikiexp.rag` / `wikiexp.llm` — `RAG(data_dir, backend).ask(question, conversation)`: cited answers from
+  Wikipedia passages; ollama and Claude backends (`make_backend`)
 - `tui.widgets.TitlePicker` — a title input for screens that only accepts real articles

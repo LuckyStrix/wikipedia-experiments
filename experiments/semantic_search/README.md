@@ -151,14 +151,22 @@ of events. Only the intro is embedded; later sections are not searchable.
 Cleaning check: ~20 diverse real articles were read by eye and fixed, ~50,000 random leads were
 scanned for leftover markup while developing, and in the finished table every 50th lead (144,693) was
 checked: none had braces, brackets, `||` table debris or `thumb`, and 6 had a stray HTML tag (the one inspected was `<nowiki>`, which is fixed
-now). Known leftovers: templates that compute text (heights, currency conversions, some team and
-sport templates) leave a gap like "a listed height of," because unknown templates are dropped rather
-than rendered.
+now). Known leftovers: templates that compute text (currency conversions, team and sport templates,
+population densities) leave a gap because unknown templates are dropped rather than rendered. The common
+inline ones (`convert`/`cvt` with the conversion, dates, `lang`, `nihongo`, `chem`, ship names, ...) are
+now rendered by `wikiexp/wikitemplates.py`; the `leads.sqlite` built before that change doesn't have this
+yet (re-run the `text` stage to get it, ~21 minutes; the numbers are in experiments/ask/README.md).
+
+## Hybrid search
+
+`--mode hybrid` (the default; also in the screen, `ctrl+t` cycles modes) fuses the embeddings with a
+keyword index over every article (`keyword` stage) and exact article names found in the query, so the
+50,000-article embedding limit no longer hides the article you mean ("Tacoma Narrows Bridge" is found
+by its words even though it is not embedded). See `wikiexp/retrieval.py` and experiments/ask/README.md.
 
 ## Ideas
 
 - Embed more of each article (sections as separate vectors) for the RAG assistant: `wikitext.sections()`
   already splits articles, and the shard/index code works for any list of texts
 - A bigger model (`BAAI/bge-base-en-v1.5`, 768-d, ~2x the index) or a re-ranker on the top 50
-- Hybrid search: combine with the title index so exact names always win
 - "More like this" from any article: `search_vector` with that article's stored vector

@@ -88,14 +88,35 @@ Other experiments can rank articles by notability with `wikiexp.centrality.Centr
 
 ### Semantic search
 
-Opens from the sidebar once the `text` and `embed` stages are done. Type a description in your own
-words ("that battle where the weather decided everything") and get the articles closest in meaning,
-with their score and intro. Arrow keys browse the results, `ctrl+o` reads the whole article (cleaned
-from the dump), `ctrl+l` starts a new query. Also on the command line:
+Opens from the sidebar once the `text` and `keyword` stages are done (the `embed` stage is optional).
+Type a description in your own words ("that battle where the weather decided everything") and get
+articles back by **hybrid** search: meaning (embeddings, for the articles embedded so far), the words
+you used (keyword index, all 7.2M articles) and exact article names in the question, fused into one
+ranking. `ctrl+t` switches to semantic-only or keyword-only. Arrow keys browse the results, `ctrl+o`
+reads the whole article (cleaned from the dump), `ctrl+l` starts a new query. Also on the command line:
 
 ```bash
 python -m experiments.semantic_search "that battle where the weather decided everything" -k 10
+python -m experiments.semantic_search "Tacoma Narrows Bridge collapse" --mode keyword   # semantic | keyword | hybrid
 ```
+
+### Ask Wikipedia
+
+Opens once the `core`, `titles`, `text` and `keyword` stages are done. Ask a question in plain English;
+a language model answers **only from Wikipedia passages** retrieved from your local copy and cites them
+as [1], [2]; the numbered sources are on the right (Enter shows the whole passage, `ctrl+o` the whole
+article). Follow-up questions work (`ctrl+n` starts a new conversation), the model runs on this machine
+through [ollama](https://ollama.com) (default `llama3.2:3b`; `ollama pull llama3.2:3b`) or on another
+one (Ollama server URL in the *Ask* settings tab), or switch to Claude with `ctrl+b` (needs
+`ANTHROPIC_API_KEY` in the environment). On the command line:
+
+```bash
+python -m experiments.ask "Who designed the Eiffel Tower?" --show-passages
+python -m experiments.ask -i                      # a conversation
+python -m experiments.ask "..." --backend claude --effort high
+```
+
+See [experiments/ask](experiments/ask/README.md) for how it works, measured quality and speed.
 
 ## Layout
 
@@ -105,7 +126,8 @@ pipeline/     UI-free core: stages, settings registry, runner, progress parsers,
               and the build scripts themselves (download.sh, build_core.py, build_titles.py)
 tui/          the Textual app: stage cards, settings form, log, dialogs, title picker
 wikiexp/      shared library: paths, dump readers, database/graph access, title search,
-              article wikitext + cleaning (wikitext.py), semantic search (semantic.py)
+              article wikitext + cleaning (wikitext.py, wikitemplates.py), semantic / keyword / hybrid
+              search (semantic.py, keyword.py, retrieval.py), RAG + LLM backends (rag.py, llm.py)
 experiments/  one folder per experiment (see experiments/README.md)
 tools/        sync.py: move data between machines over SSH
 tests/        pytest suite; uses a tiny hand-made Wikipedia, no dumps needed
@@ -191,6 +213,7 @@ python -m pipeline.build_titles   # needs wiki.sqlite; title search index (~15 m
 python -m pipeline.build_geo      # needs wiki.sqlite + geo_tags dump (langlinks optional); places index (~1 minute)
 python -m pipeline.build_centrality   # needs data/graph; PageRank etc. (~25 minutes, ~4 GB RAM)
 python -m pipeline.build_text     # needs the text dumps + core; clean intro of every article (~20 minutes, 6 workers)
+python -m pipeline.build_keyword  # needs text; FTS5 (bm25) index of every title + intro (~4 minutes, 2.2 GB)
 python -m pipeline.build_embed    # needs text; sentence embeddings + faiss index. Run on a GPU machine
 ```
 
@@ -263,6 +286,19 @@ print(W.to_text(raw)[:500])             # clean plain text; W.sections(raw) -> [
 for page_id, title, lead in wt.iter_pages(fn=lambda p: W.lead(p.text)):   # all articles, in parallel
     ...
 ```
+
+`fts.sqlite` (from `pipeline.build_keyword`, 2.2 GB): an FTS5 index (porter stemmer, accents folded) over
+title and lead of every article except disambiguation pages, with `rowid` = `leads.rank`. Searched
+through `wikiexp.keyword.KeywordIndex` (bm25, title weighted 8x the lead) and, fused with embeddings and
+title matches, `wikiexp.retrieval.HybridSearch`:
+
+```python
+from wikiexp.retrieval import HybridSearch
+for r in HybridSearch().search("who designed the Tacoma Narrows Bridge?", k=5):
+    print(r.title, r.via)            # via: which of semantic / keyword / title found it
+```
+
+`wikiexp.rag.RAG` builds the question-answering pipeline on top (used by Ask Wikipedia).
 
 ### data/search/
 

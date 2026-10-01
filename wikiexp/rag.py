@@ -45,7 +45,7 @@ from .semantic import DEFAULT_MODEL, Embedder, SentenceTransformerEmbedder, read
 MIN_WORDS, MAX_WORDS = 120, 220          # passage size
 MAX_PASSAGES_PER_ARTICLE = 30            # before embedding (lexical pre-filter), the lead always stays
 MAX_PER_ARTICLE_IN_PROMPT = 3
-SCORE_MARGIN = 0.12                      # keep passages within this of the best score
+SCORE_MARGIN = 0.10                      # keep passages within this of the best score
 HISTORY_TURNS = 3
 NO_ANSWER = "The sources I found don't contain the answer to that."
 
@@ -229,7 +229,7 @@ def estimate_tokens(text: str) -> int:
 
 
 def pack(passages: Sequence[Passage], budget_tokens: int, per_article: int = MAX_PER_ARTICLE_IN_PROMPT,
-         max_sources: int = 10, margin: float = SCORE_MARGIN, min_sources: int = 2) -> list[Source]:
+         max_sources: int = 8, margin: float = SCORE_MARGIN, min_sources: int = 2) -> list[Source]:
     """The best passages (by .score) that fit the token budget, at most `per_article` from one article,
     numbered from 1 in score order. Passages scoring more than `margin` below the best are left out
     (after `min_sources`): padding the prompt with weak matches slows a small model and distracts it.
