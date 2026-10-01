@@ -17,3 +17,6 @@ venv/
 .ipynb_checkpoints/
 .tui_state.json
 .pytest_cache/
+
+# agent worktrees
+.claude/worktrees/
