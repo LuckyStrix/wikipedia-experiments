@@ -18,6 +18,8 @@ EXPERIMENTS = [
                ("core", "titles", "geo"), "experiments.nearby.screen:NearbyScreen"),
     Experiment("centrality", "Centrality", "PageRank leaderboard, article lookup and over/under-rated articles.",
                ("core", "titles", "centrality"), "experiments.centrality.screen:CentralityScreen"),
-    Experiment("semantic_search", "Semantic search", "Find articles by meaning, not keywords.",
-               ("text", "embed"), "experiments.semantic_search.screen:SemanticSearchScreen"),
+    Experiment("semantic_search", "Semantic search", "Find articles by meaning, words and names (hybrid search).",
+               ("text", "keyword"), "experiments.semantic_search.screen:SemanticSearchScreen"),
+    Experiment("ask", "Ask Wikipedia", "Ask a question; a local language model answers from Wikipedia, with citations.",
+               ("core", "titles", "text", "keyword"), "experiments.ask.screen:AskScreen"),
 ]

@@ -93,6 +93,24 @@ REGISTRY: list[Setting] = [
     Setting("embed_limit", STR, "0", "Build", "Search embeddings", "Most popular articles",
             ("stages", "embed", "limit"), pattern=r"\d{1,9}", hint="0 = all",
             help="Embed only the N most-linked articles (0 = all of them)."),
+
+    # ── Ask Wikipedia ──────────────────────────────────────────────────────────
+    Setting("ask_backend", STR, "ollama", "Ask", "Language model", "Backend", ("ask", "backend"),
+            pattern=r"ollama|claude", hint="ollama or claude",
+            help="ollama runs a model on this machine (or another one on your network); claude uses the "
+                 "Anthropic API and needs ANTHROPIC_API_KEY in the environment (never stored here)."),
+    Setting("ollama_url", STR, "http://localhost:11434", "Ask", "Ollama", "Server URL", ("ask", "ollama_url"),
+            pattern=r"https?://\S+", hint="e.g. http://gpu-pc:11434",
+            help="Point this at the GPU machine's ollama to answer faster (start it there with "
+                 "OLLAMA_HOST=0.0.0.0)."),
+    Setting("ollama_model", STR, "llama3.2:3b", "Ask", "Ollama", "Model", ("ask", "ollama_model"),
+            pattern=r"\S+", hint="ollama pull <model>",
+            help="Any model you have pulled with `ollama pull`."),
+    Setting("claude_model", STR, "claude-opus-5-5", "Ask", "Claude", "Model", ("ask", "claude_model"),
+            pattern=r"\S+", help="Model id used with the claude backend."),
+    Setting("claude_effort", STR, "medium", "Ask", "Claude", "Effort", ("ask", "claude_effort"),
+            pattern=r"low|medium|high|xhigh|max", hint="low, medium, high, xhigh or max",
+            help="How much thinking Claude does before answering; lower is faster and cheaper."),
 ]
 
 BY_KEY = {s.key: s for s in REGISTRY}

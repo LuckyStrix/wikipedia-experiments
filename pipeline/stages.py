@@ -265,6 +265,19 @@ def text_summary(s: Mapping) -> list[str]:
     return lines
 
 
+def keyword_path(s: Mapping) -> Path:
+    return text_dir(s) / "fts.sqlite"
+
+
+def keyword_summary(s: Mapping) -> list[str]:
+    p = keyword_path(s)
+    lines = [f"{p.relative_to(data_dir(s))}: {_size(p)}"]
+    if p.exists():
+        with sqlite3.connect(f"file:{p}?mode=ro", uri=True) as db:
+            lines += [f"{k}: {v}" for k, v in db.execute("SELECT key, value FROM meta")]
+    return lines
+
+
 def centrality_dir(s: Mapping) -> Path:
     return data_dir(s) / "centrality"
 
@@ -381,6 +394,15 @@ STAGES: list[Stage] = [
         outputs=lambda s: [text_dir(s) / "leads.sqlite"],
         summary=text_summary,
         signature="pipeline.build_text",
+    ),
+    Stage(
+        key="keyword", name="Build keyword index",
+        description="Full-text (bm25) index over every article's title and intro -> text/fts.sqlite.",
+        command=lambda s: [PY, "-m", "pipeline.build_keyword"],
+        inputs=lambda s: [text_dir(s) / "leads.sqlite"],
+        outputs=lambda s: [keyword_path(s)],
+        summary=keyword_summary,
+        signature="pipeline.build_keyword",
     ),
     Stage(
         key="embed", name="Embed articles for search",

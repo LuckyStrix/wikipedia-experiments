@@ -289,7 +289,7 @@ def test_text_and_embed_stages(tmp_path, wt):
     s = S.Settings({"data_dir": str(tmp_path / "data"), "dumps_dir": str(tmp_path / "dumps")})
     text, emb = ST.BY_KEY["text"], ST.BY_KEY["embed"]
     assert emb.manual and not text.manual
-    assert [st.key for st in ST.STAGES][-2:] == ["text", "embed"]
+    assert [st.key for st in ST.STAGES][-3:] == ["text", "keyword", "embed"]
     assert "pipeline.build_text" in text.command(s) and "--lead-chars" in text.command(s)
     cmd = emb.command(s)
     assert cmd[cmd.index("--model") + 1] == "BAAI/bge-small-en-v1.5" and cmd[cmd.index("--limit") + 1] == "0"
