@@ -3,3 +3,4 @@ textual>=0.80
 mwparserfromhell>=0.6        # wikitext -> plain text (wikiexp.wikitext)
 faiss-cpu>=1.8               # semantic search index
 sentence-transformers>=3     # embeddings; for a GPU install a CUDA build of torch first (see experiments/semantic_search)
+anthropic>=1.11   # Claude backend of the Ask Wikipedia assistant (optional at runtime)
