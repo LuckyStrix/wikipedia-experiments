@@ -208,11 +208,12 @@ def test_cli_without_data(tmp_path, monkeypatch):
 
 # ── stage and settings ───────────────────────────────────────────────────────
 
-def test_stage_command_follows_settings():
+def test_stage_command_follows_settings(tmp_path):
     st = ST.BY_KEY["centrality"]
-    cmd = st.command(S.Settings({"centrality_damping": "0.9", "centrality_reverse": False}))
+    empty = {"data_dir": str(tmp_path)}   # no prose graph here, so no --graph flags
+    cmd = st.command(S.Settings({**empty, "centrality_damping": "0.9", "centrality_reverse": False}))
     assert cmd[-3:] == ["--damping", "0.9", "--no-reverse"]
-    assert "--no-reverse" not in st.command(S.Settings())
+    assert "--no-reverse" not in st.command(S.Settings(empty))
     assert S.Settings({"centrality_damping": "1.5"}).invalid() == ["PageRank damping"]
     assert S.Settings({"centrality_damping": "0.7"}).invalid() == []
 
