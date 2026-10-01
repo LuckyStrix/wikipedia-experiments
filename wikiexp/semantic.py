@@ -20,6 +20,8 @@ several threads (e.g. Textual workers) can search at once.
 from __future__ import annotations
 
 import json
+import os
+import sys
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -63,6 +65,19 @@ class Embedder(Protocol):
         """float32 array (len(texts), dim) of unit vectors; query=True for search questions."""
 
 
+def model_cache() -> str | None:
+    """Where downloaded models live: <data>/models, so they travel with the data (tools.sync) and
+    don't depend on ~/.cache being writable. A user-set HF_HOME / SENTENCE_TRANSFORMERS_HOME wins.
+    Sets HF_HOME too (Hugging Face's downloader keeps its own cache there), which only takes effect
+    if huggingface_hub hasn't been imported yet - so call this before importing sentence_transformers."""
+    if os.environ.get("HF_HOME") or os.environ.get("SENTENCE_TRANSFORMERS_HOME"):
+        return None
+    cache = paths.DATA / "models"
+    if "huggingface_hub" not in sys.modules:
+        os.environ["HF_HOME"] = str(cache)
+    return str(cache)
+
+
 class SentenceTransformerEmbedder:
     """sentence-transformers model, loaded on first use. On CUDA it runs in half precision."""
 
@@ -76,12 +91,15 @@ class SentenceTransformerEmbedder:
     def model(self):
         with self._lock:
             if self._model is None:
+                cache = model_cache()
                 from sentence_transformers import SentenceTransformer
                 self.device = resolve_device(self.device_name)
                 try:    # offline first: no network round trips (or hangs) when the model is already cached
-                    m = SentenceTransformer(self.model_name, device=self.device, local_files_only=True)
+                    m = SentenceTransformer(self.model_name, device=self.device, cache_folder=cache,
+                                            local_files_only=True)
                 except Exception:
-                    m = SentenceTransformer(self.model_name, device=self.device)   # first use: download
+                    m = SentenceTransformer(self.model_name, device=self.device,   # first use: download
+                                            cache_folder=cache)
                 m.max_seq_length = min(MAX_SEQ_LENGTH, m.max_seq_length or MAX_SEQ_LENGTH)
                 if self.device.startswith("cuda"):
                     m.half()
