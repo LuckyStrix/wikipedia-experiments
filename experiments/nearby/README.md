@@ -5,8 +5,9 @@ within that distance, with how far away they are and in which direction.
 
 **Needs:** the core database, title index and places index (pipeline stages 2, 3 and `geo`, which also
 wants `geo_tags.sql.gz`; `langlinks.sql.gz` is used when present). **Machine:** any, CPU only. The
-places index is 190 MB and queries take a few milliseconds. If `data/centrality/pagerank.npy` exists
-(float32, indexed by graph idx) notability uses PageRank, otherwise incoming links.
+places index is 190 MB and queries take a few milliseconds. If `data/centrality/prose_pagerank.npy` exists
+(float32, indexed by graph idx; PageRank of the links written in article text) notability uses it,
+else `pagerank.npy`, otherwise incoming links.
 
 **Run:** from the app (sidebar -> Nearby), or
 
@@ -60,8 +61,8 @@ When the location was an article, that article is left out of its own results (a
 score = 100 * (0.7 * log(1 + signal) / log(1 + max_signal)  +  0.3 * log(1 + langs) / log(1 + max_langs))
 ```
 
-`signal` is the article's PageRank (scaled by the article count, so an average article is ~1) when
-`data/centrality/pagerank.npy` exists, else its incoming link count; `langs` is how many other
+`signal` is the article's prose PageRank (scaled by the article count, so an average article is ~1)
+when `data/centrality/prose_pagerank.npy` exists, else its PageRank, else its incoming link count; `langs` is how many other
 language editions have the article. Both are heavy-tailed, so logs; maxima are over all places, so a
 score means the same in every query. Without langlinks the score is the signal alone.
 
@@ -126,6 +127,24 @@ $ python -m experiments.nearby Springfield -r 10km --limit 3
   the place itself, e.g. the Francophonie organisation's Paris office tops the Eiffel Tower's
   neighbours, and the Himalayas outrank Lhotse near Everest. PageRank (once built) and the language
   count soften this but don't remove it; type-based boosts or a pageview signal would be the next step.
+
+### Before and after prose PageRank
+
+Top results with PageRank over all links (before) versus PageRank over links written in article text
+(after, `notability from prose PageRank + languages`):
+
+| query | before | after |
+|---|---|---|
+| Eiffel Tower, 1 km | Francophonie (53), Exposition Universelle 1900, International Chamber of Commerce, Champ de Mars, Guimet Museum, Quai Branly, Death of Diana, Palais de Tokyo | Francophonie (52), Exposition Universelle 1900 (50), International Chamber of Commerce, Champ de Mars, Death of Diana, French School of the Far East, \u00c9cole Militaire, Palais de Tokyo |
+| Times Square, 500 m | Nasdaq (62), Midtown Manhattan, NYT Building, One Astor Plaza, Bank of America Tower, Hess Corporation, Bryant Park | Nasdaq (64), Midtown Manhattan (56), Theater District (38), Port Authority Bus Terminal, NYT Building, Bryant Park, One Times Square, Palace Theatre |
+| Mount Everest, 50 km | Himalayas (65), Lhotse, Makalu, Cho Oyu, Island Peak, Sagarmatha NP, Nuptse, Changtse | Himalayas (73), Lhotse, Makalu, Cho Oyu, Sagarmatha NP, Khumbu, Khumbu Glacier, Namche Bazaar |
+
+Times Square improves most: corporate lobby buildings (One Astor Plaza, Hess Corporation) give way
+to the Theater District, the bus terminal and the Palace Theatre. Everest loses the climbing-route
+article Island Peak for the Khumbu region and Namche Bazaar. Paris barely changes: the Francophonie
+office stays first because it is linked in prose from many articles about member states and the
+language count (`langs`) adds to it, so the next step there is a type weight or pageviews, not a
+different link graph.
 
 ## Ideas
 

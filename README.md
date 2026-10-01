@@ -191,9 +191,9 @@ Use the app's stage cards, or run the steps directly:
 python -m pipeline.build_core     # needs the 4 required dumps; ~1 hour, ~16 GB RAM peak
 python -m pipeline.build_titles   # needs wiki.sqlite; title search index (~15 minutes)
 python -m pipeline.build_geo      # needs wiki.sqlite + geo_tags dump (langlinks optional); places index (~1 minute)
-python -m pipeline.build_prose_graph # needs the text dumps + core; only links written in article text (~35 minutes, 6 workers)
+python -m pipeline.build_prose_graph # needs the text dumps + core; only links written in article text (~19 minutes, 6 workers, ~4.5 GB RAM)
 python -m pipeline.build_centrality   # needs data/graph; PageRank etc. (~25 minutes, ~4 GB RAM)
-python -m pipeline.build_centrality --graph data/prose_graph --prose-only   # add prose PageRank to a finished build (~6 minutes)
+python -m pipeline.build_centrality --graph data/prose_graph --prose-only   # add prose PageRank to a finished build (~3 minutes)
 python -m pipeline.build_text     # needs the text dumps + core; clean intro of every article (~20 minutes, 6 workers)
 python -m pipeline.build_embed    # needs text; sentence embeddings + faiss index. Run on a GPU machine
 ```
