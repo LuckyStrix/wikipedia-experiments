@@ -26,4 +26,7 @@ Shared code goes in `wikiexp/`:
 - `wikiexp.titles` — `TitleIndex`: title search with autocomplete-style suggestions
 - `wikiexp.progress` — `progress(pct, text)` so a long script drives the app's progress bar
 - `wikiexp.sqldump` — streaming readers for Wikimedia `*.sql.gz` dumps
+- `wikiexp.wikitext` — `WikiText().fetch(page_id)` (random access to one article's wikitext),
+  `iter_pages()` (all articles, in parallel), `to_text()` / `sections()` / `lead()` (clean plain text)
+- `wikiexp.semantic` — `SemanticSearch().search(query, k)`: articles closest in meaning (the RAG building block)
 - `tui.widgets.TitlePicker` — a title input for screens that only accepts real articles

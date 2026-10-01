@@ -56,10 +56,15 @@ class PipelineRunner:
         return self._start([self.by_key[key]], mode=f"stage {key}")
 
     def run_all(self) -> bool:
-        """Run every stage that isn't done yet, in order, stopping at the first failure."""
-        todo = [st for st in self.stages if not st.is_done(self.settings)]
+        """Run every stage that isn't done yet, in order, stopping at the first failure.
+        Manual stages (e.g. needing a GPU) are skipped; they run from their own card."""
+        pending = [st for st in self.stages if not st.is_done(self.settings)]
+        todo = [st for st in pending if not st.manual]
+        if len(todo) < len(pending):
+            names = ", ".join(st.name for st in pending if st.manual)
+            self.on_log(f"Skipping manual stage(s): {names}. Start them with Run on their card.", "info")
         if not todo:
-            self.on_log("Every stage is already done.", "info")
+            self.on_log("Every automatic stage is already done.", "info")
             return False
         return self._start(todo, mode="all")
 

@@ -192,6 +192,8 @@ class WikiApp(App):
                     status = "Needs " + ", ".join(missing[:2]) + ("…" if len(missing) > 2 else "")
                 else:
                     status = hint or "Ready to run"
+                if st.manual and missing:
+                    status += " · manual stage (GPU machine)"
                 card.set_state("waiting", status)
         names = {st.key: st.name for st in self.stages}
         for ex in EXPERIMENTS:

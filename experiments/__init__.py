@@ -14,4 +14,6 @@ class Experiment:
 EXPERIMENTS = [
     Experiment("six_degrees", "Six Degrees", "Shortest chain of links between any two articles.",
                ("core", "titles"), "experiments.six_degrees.screen:SixDegreesScreen"),
+    Experiment("semantic_search", "Semantic search", "Find articles by meaning, not keywords.",
+               ("text", "embed"), "experiments.semantic_search.screen:SemanticSearchScreen"),
 ]
