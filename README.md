@@ -55,6 +55,21 @@ python -m experiments.six_degrees "Kevin Bacon" "Mitochondrion"
 python -m experiments.six_degrees --random
 ```
 
+### Nearby
+
+"What's notable near here?" Opens once the places index is built. Type a place name and pick a
+suggestion (only articles with coordinates are offered), or type coordinates (`48.8584, 2.2945`,
+`48.86N 2.29E`, `48°51′29″N 2°17′40″E`) and press Enter. Set the radius (`500 m`, `2 km`, `3 mi`; a bare
+number is km), the sort (`ctrl+o`: most notable / nearest) and a place-type filter; the table lists
+each place with distance, compass direction, type and a notability score (PageRank if
+`data/centrality/pagerank.npy` exists, else incoming links, blended with language editions). Enter on a
+result searches around it, `ctrl+b` goes back. On the command line:
+
+```bash
+python -m experiments.nearby "Eiffel Tower" --radius 2km [--sort distance] [--limit 30] [--type landmark]
+python -m experiments.nearby "48.8584, 2.2945" -r 500m
+```
+
 ## Layout
 
 ```
@@ -145,6 +160,7 @@ Use the app's stage cards, or run the steps directly:
 ```bash
 python -m pipeline.build_core     # needs the 4 required dumps; ~1 hour, ~16 GB RAM peak
 python -m pipeline.build_titles   # needs wiki.sqlite; title search index (~15 minutes)
+python -m pipeline.build_geo      # needs wiki.sqlite + geo_tags dump (langlinks optional); places index (~1 minute)
 ```
 
 Parsing the dumps is spread over several processes on Linux/macOS (all but two cores, up to 8; set
@@ -164,6 +180,13 @@ their clock speed with every core busy gain more. Writing the database is single
 
 Every article and redirect title in popularity order (most incoming links first), with a trigram
 full-text index. Used through `wikiexp.titles.TitleIndex` (`search`, `resolve`, `random_article`).
+
+### data/geo.sqlite
+
+Every article with a primary Earth coordinate (1.24M): `places` (`page_id`, `idx`, `title`, `lat`,
+`lon`, `type`, `pop`, `dim` in metres, `country`, `region`, `langs` = other-language editions, `links` =
+incoming links), an R*Tree `places_rt` over lat/lon for box queries, and `meta`. Articles with only
+secondary coordinates are skipped (counts are in `meta`). Used by the Nearby project.
 
 ### data/graph/
 

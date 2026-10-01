@@ -233,6 +233,19 @@ def titles_summary(s: Mapping) -> list[str]:
     return lines
 
 
+def geo_path(s: Mapping) -> Path:
+    return data_dir(s) / "geo.sqlite"
+
+
+def geo_summary(s: Mapping) -> list[str]:
+    p = geo_path(s)
+    lines = [f"{p.name}: {_size(p)}"]
+    if p.exists():
+        with sqlite3.connect(f"file:{p}?mode=ro", uri=True) as db:
+            lines += [f"{k}: {v}" for k, v in db.execute("SELECT key, value FROM meta")]
+    return lines
+
+
 PY = sys.executable
 
 STAGES: list[Stage] = [
@@ -269,6 +282,15 @@ STAGES: list[Stage] = [
         outputs=lambda s: [titles_path(s)],
         summary=titles_summary,
         signature="pipeline.build_titles",
+    ),
+    Stage(
+        key="geo", name="Build places index",
+        description="Geotagged articles with an R*Tree, for the Nearby project.",
+        command=lambda s: [PY, "-m", "pipeline.build_geo"],
+        inputs=lambda s: core_outputs(s) + [dump_file(s, "geo_tags.sql.gz")],
+        outputs=lambda s: [geo_path(s)],
+        summary=geo_summary,
+        signature="pipeline.build_geo",
     ),
 ]
 

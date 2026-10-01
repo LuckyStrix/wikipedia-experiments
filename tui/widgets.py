@@ -243,12 +243,17 @@ class TitlePicker(Vertical):
 
     ``search`` is called from a worker thread: (query) -> list of wikiexp.titles.Match.
     ``resolve`` likewise: (query) -> Match | None.
+    ``literal`` (optional) is called on the UI thread with the text on every edit: return an object
+    with ``article`` and ``status`` (e.g. a coordinate pair) to accept the text as typed, None to
+    carry on with suggestions, or raise ValueError(message) to flag it as invalid. Enter on an
+    accepted literal posts ``Picked`` again with ``submitted=True``.
     """
 
     class Picked(Message):
-        def __init__(self, picker: "TitlePicker"):
+        def __init__(self, picker: "TitlePicker", submitted: bool = False):
             super().__init__()
             self.picker = picker
+            self.submitted = submitted
 
         @property
         def control(self):
@@ -256,9 +261,11 @@ class TitlePicker(Vertical):
 
     DEBOUNCE = 0.12
 
-    def __init__(self, placeholder: str, search: Callable, resolve: Callable, **kw):
+    def __init__(self, placeholder: str, search: Callable, resolve: Callable,
+                 literal: Callable | None = None, **kw):
         super().__init__(classes="title-picker", **kw)
         self.placeholder, self._search, self._resolve = placeholder, search, resolve
+        self._literal = literal
         self.match = None
         self._timer = None
         self._set_value = None   # value we put in the Input ourselves (its Changed arrives later)
@@ -280,7 +287,8 @@ class TitlePicker(Vertical):
         self.input.value = self._set_value
         self.input.cursor_position = len(self._set_value)
         self._hide()
-        self._status(f"✓ {m.article}  ·  {m.links:,} incoming link{'s' * (m.links != 1)}" if m else "")
+        self._status(getattr(m, "status", None) or
+                     f"✓ {m.article}  ·  {m.links:,} incoming link{'s' * (m.links != 1)}" if m else "")
         self.input.remove_class("-bad")
         self.post_message(self.Picked(self))
 
@@ -310,6 +318,21 @@ class TitlePicker(Vertical):
             self._status("")
             return
         self._generation += 1
+        if self._literal is not None:
+            try:
+                lit = self._literal(q)
+            except ValueError as e:
+                self._hide()
+                self._status(str(e), bad=True)
+                self.input.add_class("-bad")
+                return
+            if lit is not None:
+                self._hide()
+                self.match = lit
+                self._status(lit.status)
+                self.input.remove_class("-bad")
+                self.post_message(self.Picked(self))
+                return
         gen = self._generation
         self._timer = self.set_timer(self.DEBOUNCE, lambda: self._lookup(q, gen))
 
@@ -342,7 +365,9 @@ class TitlePicker(Vertical):
     def _submitted(self, event: Input.Submitted) -> None:
         event.stop()
         ol = self.query_one(OptionList)
-        if ol.display and ol.highlighted is not None and self._shown_query == event.value:
+        if self._literal is not None and self.match is not None and not ol.display:
+            self.post_message(self.Picked(self, submitted=True))   # an accepted literal: Enter confirms it
+        elif ol.display and ol.highlighted is not None and self._shown_query == event.value:
             self.set_match(self._results[ol.highlighted])
         elif event.value.strip():
             # suggestions are missing or out of date: use the exact title, else the best suggestion

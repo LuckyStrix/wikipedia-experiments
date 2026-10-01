@@ -14,4 +14,6 @@ class Experiment:
 EXPERIMENTS = [
     Experiment("six_degrees", "Six Degrees", "Shortest chain of links between any two articles.",
                ("core", "titles"), "experiments.six_degrees.screen:SixDegreesScreen"),
+    Experiment("nearby", "Nearby", "What's notable within a distance of any place or coordinates.",
+               ("core", "titles", "geo"), "experiments.nearby.screen:NearbyScreen"),
 ]
