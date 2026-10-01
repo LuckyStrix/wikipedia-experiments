@@ -81,11 +81,12 @@ class OllamaBackend:
 
     def __init__(self, url: str = DEFAULT_OLLAMA_URL, model: str = DEFAULT_OLLAMA_MODEL,
                  num_ctx: int = 8192, temperature: float = 0.2, timeout: float = 600.0):
-        self.url = (url or DEFAULT_OLLAMA_URL).strip().rstrip("/")
+        self.url = (url or DEFAULT_OLLAMA_URL).strip()
         self.model = (model or DEFAULT_OLLAMA_MODEL).strip()
         self.num_ctx, self.temperature, self.timeout = num_ctx, temperature, timeout
         self.info = GenInfo()
         parsed = urllib.parse.urlparse(self.url if "://" in self.url else "http://" + self.url)
+        self.url = self.url.rstrip("/")
         if not parsed.hostname:
             raise LLMError(f"'{url}' is not a valid ollama URL (try http://localhost:11434)")
         self._https = parsed.scheme == "https"

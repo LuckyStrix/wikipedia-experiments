@@ -370,7 +370,7 @@ def rewrite_query(question: str, history: Sequence[Turn], backend: Backend | Non
             out = complete(backend, REWRITE_PROMPT,
                            [{"role": "user", "content": f"Conversation:\n{convo}\n\nLast message: {question}"}],
                            max_tokens=80)
-            out = out.strip().strip('"').splitlines()[0].strip() if out.strip() else ""
+            out = out.strip().splitlines()[0].strip().strip('"“”').strip() if out.strip() else ""
             if 3 <= len(out) <= 300:
                 return out
         except LLMError:

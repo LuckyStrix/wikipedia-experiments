@@ -84,10 +84,9 @@ def main():
         if args.budget:
             kw["budget_tokens"] = args.budget
         rag = session.build_rag(Path(args.data) if args.data else paths.DATA, backend, **kw)
-        missing = [p.name for p in (rag.hybrid.keyword.path, rag.data_dir / "titles.sqlite") if not p.exists()]
-        if missing:
-            sys.exit(f"Missing {', '.join(missing)} in {rag.data_dir}: run the 'titles' and 'keyword' stages "
-                     f"(python -m pipeline.build_titles; python -m pipeline.build_keyword).")
+        if not rag.hybrid.modes():
+            sys.exit(f"No keyword index or embeddings in {rag.data_dir}: run the 'text' and 'keyword' stages "
+                     f"(python -m pipeline.build_text; python -m pipeline.build_keyword).")
     except LLMError as e:
         sys.exit(str(e))
     conv = Conversation()

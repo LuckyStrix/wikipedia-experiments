@@ -105,6 +105,8 @@ class AskScreen(Screen):
                 self.rag = session.build_rag(self.data_dir, backend)
             elif self._backend is not None:
                 self.rag.backend = self._backend
+            if not self.rag.hybrid.modes():
+                raise FileNotFoundError("neither the keyword index nor the embeddings exist; run the 'keyword' stage")
             self.rag.warm_up()
         except Exception as e:
             self.app.call_from_thread(self._status, f"Can't load Ask Wikipedia: {e}")
@@ -224,11 +226,11 @@ class AskScreen(Screen):
         self._cancel.clear()
         self._gen += 1
         event.input.value = ""
-        self._render(f"**You:** {question}\n\n*Searching Wikipedia…*")
+        self._show_convo(f"**You:** {question}\n\n*Searching Wikipedia…*")
         self.query_one("#ask-sources", OptionList).clear_options()
         self._run(question, self._gen)
 
-    def _render(self, current: str) -> None:
+    def _show_convo(self, current: str) -> None:
         md = self.query_one("#ask-answer", Markdown)
         md.update(self._transcript + current)
         self.query_one("#ask-convo", VerticalScroll).scroll_end(animate=False)
@@ -237,6 +239,7 @@ class AskScreen(Screen):
     def _run(self, question: str, gen: int) -> None:
         call = self.app.call_from_thread
         parts: list[str] = []
+        finished = None
         last_flush = 0.0
         t0 = time.time()
         try:
@@ -251,11 +254,13 @@ class AskScreen(Screen):
                     parts.append(str(ev.data))
                     if time.time() - last_flush > FLUSH_SECONDS:
                         last_flush = time.time()
-                        call(self._render, f"**You:** {question}\n\n{''.join(parts)}")
+                        call(self._show_convo, f"**You:** {question}\n\n{''.join(parts)}")
                 elif ev.kind == "done":
-                    call(self._finish, question, ev.data, gen)
-                    return
-            call(self._stopped, question, "".join(parts))
+                    finished = ev.data       # keep iterating: the generator records the turn after "done"
+            if finished is not None:
+                call(self._finish, question, finished, gen)
+            else:
+                call(self._stopped, question, "".join(parts))
         except Exception as e:           # a bug or an unexpected failure must not leave the screen stuck
             call(self._failed, question, f"{e.__class__.__name__}: {e}", "".join(parts))
 
@@ -266,7 +271,7 @@ class AskScreen(Screen):
         notes += [f"note: {n}" for n in answer.notes]
         tail = "".join(f"\n\n> {n}" for n in notes)
         self._transcript += f"**You:** {question}\n\n{body}{tail}\n\n---\n\n"
-        self._render("")
+        self._show_convo("")
         searched = f" Searched for: “{answer.query}”." if answer.query != answer.question else ""
         self._status(f"{session.describe(answer)}.{searched}  Cited: "
                      f"{', '.join(f'[{n}]' for n in answer.cited) or 'none'}.")
@@ -274,13 +279,13 @@ class AskScreen(Screen):
 
     def _stopped(self, question: str, partial: str) -> None:
         self._transcript += f"**You:** {question}\n\n{partial}\n\n> stopped\n\n---\n\n"
-        self._render("")
+        self._show_convo("")
         self._status("Stopped.")
         self._idle()
 
     def _failed(self, question: str, error: str, partial: str) -> None:
         self._transcript += f"**You:** {question}\n\n{partial}\n\n> ⚠ {error}\n\n---\n\n"
-        self._render("")
+        self._show_convo("")
         self._status(error)
         self._idle()
 
