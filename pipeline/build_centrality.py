@@ -10,6 +10,12 @@ Writes data/centrality/ (all arrays indexed by graph idx, i.e. articles.idx):
                         PageRank of the graph with every link reversed: high for "gateway" articles
                         (lists, hubs, overviews) that link out to many important articles
   meta.json             damping, iterations, residual, build time, dump date
+With --graph DIR (the prose link graph from build_prose_graph) it also writes, for that graph:
+  prose_pagerank.npy    PageRank where only links written in article text count (not the ones
+                        templates generate: citations, infoboxes, navboxes). This is the better
+                        "how notable is this article" score; the full-graph PageRank ranks ISBN first
+  prose_rank.npy, prose_order.npy   its rank and order, like rank.npy / order.npy
+  prose_meta.json       damping, iterations, residual and the graph it was computed on
 
 Method: power iteration. Each step, every article hands its score out equally over its outgoing
 links; articles with no outgoing links ("dangling") spread theirs uniformly over all articles; and
@@ -23,13 +29,15 @@ are kept in float64 while iterating (float32 rounding would stop the residual sh
 saved as float32.
 
 Usage (from the repo root): python -m pipeline.build_centrality [--damping 0.85] [--tol 1e-9]
-                            [--max-iter 200] [--no-reverse]
+                            [--max-iter 200] [--no-reverse] [--graph data/prose_graph [--prose-only]]
+--prose-only adds the prose metric to an existing build without recomputing (or touching) the rest.
 """
 import argparse
 import json
 import math
 import os
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -119,58 +127,115 @@ def make_reporter(label, lo, hi, tol):
     return report
 
 
+def relative_to_data(path):
+    """`path` as a string relative to the data folder when it lives there, else absolute."""
+    path = os.path.abspath(path)
+    try:
+        return os.path.relpath(path, paths.DATA) if os.path.commonpath([path, str(paths.DATA)]) == str(paths.DATA) else path
+    except ValueError:      # another drive on Windows
+        return path
+
+
+def write_atomically(out, arrays, meta_name, meta):
+    """Save the arrays as .tmp files, then swap them in and write the meta file last, because its
+    presence is what marks the build complete."""
+    for name, arr in arrays.items():
+        np.save(out / f"{name}.tmp.npy", arr)
+    (out / f"{meta_name}.tmp").write_text(json.dumps(meta, indent=2))
+    for name in arrays:
+        os.replace(out / f"{name}.tmp.npy", out / f"{name}.npy")
+    os.replace(out / f"{meta_name}.tmp", out / meta_name)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--damping", type=float, default=0.85, help="probability of following a link (default 0.85)")
     ap.add_argument("--tol", type=float, default=1e-9, help="stop when the L1 change is below this")
     ap.add_argument("--max-iter", type=int, default=200)
     ap.add_argument("--no-reverse", action="store_true", help="skip reverse PageRank")
+    ap.add_argument("--graph", metavar="DIR", help="also compute prose PageRank on this link graph "
+                    "(data/prose_graph, from build_prose_graph)")
+    ap.add_argument("--prose-only", action="store_true",
+                    help="with --graph: compute only prose PageRank, leaving the other files alone")
     args = ap.parse_args()
     if not 0 < args.damping < 1:
         ap.error("--damping must be between 0 and 1")
+    if args.prose_only and not args.graph:
+        ap.error("--prose-only needs --graph")
     prog.start("centrality")
 
-    load = lambda name: np.load(paths.GRAPH / f"{name}.npy", mmap_mode="r")
+    load = lambda name, d=paths.GRAPH: np.load(d / f"{name}.npy", mmap_mode="r")
     out_indptr, in_indptr = load("out_indptr"), load("in_indptr")
     n = len(out_indptr) - 1
     out_deg, in_deg = np.diff(out_indptr), np.diff(in_indptr)
     log(f"{n:,} articles, {int(out_indptr[-1]):,} links; damping {args.damping}", 1)
+    prose = Path(args.graph) if args.graph else None
+    if prose is not None:
+        p_indptr = np.load(prose / "out_indptr.npy", mmap_mode="r")
+        if len(p_indptr) - 1 != n:
+            ap.error(f"{prose} has {len(p_indptr) - 1:,} articles but the link graph has {n:,}: "
+                     "were they built from the same dump?")
 
-    arrays = {}
-    hi_fwd = 55 if not args.no_reverse else 90
-    t = time.time()
-    pr, iters, res = pagerank(in_indptr, load("in_indices"), out_deg, args.damping, args.tol, args.max_iter,
-                              make_reporter("PageRank", 3, hi_fwd, args.tol))
-    log(f"PageRank: {iters} iterations, residual {res:.2e}, {time.time() - t:.0f}s", hi_fwd)
-    meta = {"damping": args.damping, "tol": args.tol, "iterations": iters, "residual": res}
-    arrays["pagerank"] = pr.astype(np.float32)
-    del pr
-    if not args.no_reverse:
+    # the work, as (label, relative cost) so the progress bar can be shared out between the steps
+    steps = [] if args.prose_only else [("PageRank", 9.4)] + ([] if args.no_reverse else [("Reverse PageRank", 15.3)])
+    if prose is not None:
+        steps.append(("Prose PageRank", 6.0))
+    bounds, acc = {}, 3.0
+    for label, cost in steps:
+        bounds[label] = (acc, acc + 89.0 * cost / sum(c for _, c in steps))
+        acc = bounds[label][1]
+
+    arrays, meta = {}, {}
+    if not args.prose_only:
+        lo, hi = bounds["PageRank"]
         t = time.time()
-        rpr, riters, rres = pagerank(out_indptr, load("out_indices"), in_deg, args.damping, args.tol,
-                                     args.max_iter, make_reporter("Reverse PageRank", hi_fwd, 92, args.tol))
-        log(f"Reverse PageRank: {riters} iterations, residual {rres:.2e}, {time.time() - t:.0f}s", 92)
-        meta["reverse"] = {"iterations": riters, "residual": rres}
-        arrays["reverse_pagerank"] = rpr.astype(np.float32)
-        del rpr
+        pr, iters, res = pagerank(in_indptr, load("in_indices"), out_deg, args.damping, args.tol, args.max_iter,
+                                  make_reporter("PageRank", lo, hi, args.tol))
+        log(f"PageRank: {iters} iterations, residual {res:.2e}, {time.time() - t:.0f}s", hi)
+        meta = {"damping": args.damping, "tol": args.tol, "iterations": iters, "residual": res}
+        arrays["pagerank"] = pr.astype(np.float32)
+        del pr
+        if not args.no_reverse:
+            lo, hi = bounds["Reverse PageRank"]
+            t = time.time()
+            rpr, riters, rres = pagerank(out_indptr, load("out_indices"), in_deg, args.damping, args.tol,
+                                         args.max_iter, make_reporter("Reverse PageRank", lo, hi, args.tol))
+            log(f"Reverse PageRank: {riters} iterations, residual {rres:.2e}, {time.time() - t:.0f}s", hi)
+            meta["reverse"] = {"iterations": riters, "residual": rres}
+            arrays["reverse_pagerank"] = rpr.astype(np.float32)
+            del rpr
+
+    prose_arrays, prose_meta = {}, {}
+    if prose is not None:
+        lo, hi = bounds["Prose PageRank"]
+        t = time.time()
+        ppr, piters, pres = pagerank(load("in_indptr", prose), load("in_indices", prose),
+                                     np.diff(load("out_indptr", prose)), args.damping, args.tol, args.max_iter,
+                                     make_reporter("Prose PageRank", lo, hi, args.tol))
+        log(f"Prose PageRank: {piters} iterations, residual {pres:.2e}, {time.time() - t:.0f}s", hi)
+        prose_arrays["prose_pagerank"] = ppr.astype(np.float32)
+        prose_meta = {"damping": args.damping, "tol": args.tol, "iterations": piters, "residual": pres,
+                      "graph": relative_to_data(prose), "articles": n,
+                      "links": int(load("out_indptr", prose)[-1])}
+        del ppr
 
     log("ranking", 94)
-    for score, prefix in [(arrays["pagerank"], ""), (in_deg, "indegree_"),
-                          (arrays.get("reverse_pagerank"), "reverse_")]:
+    for score, prefix in [(arrays.get("pagerank"), ""), (None if args.prose_only else in_deg, "indegree_"),
+                          (arrays.get("reverse_pagerank"), "reverse_"),
+                          (prose_arrays.get("prose_pagerank"), "prose_")]:
         if score is not None:
-            arrays[f"{prefix}rank"], arrays[f"{prefix}order"] = ranking(score)
+            target = prose_arrays if prefix == "prose_" else arrays
+            target[f"{prefix}rank"], target[f"{prefix}order"] = ranking(score)
 
     out = paths.DATA / "centrality"
     out.mkdir(exist_ok=True)
     log("writing", 97)
-    for name, arr in arrays.items():
-        np.save(out / f"{name}.tmp.npy", arr)
-    meta.update(articles=n, dump_date=paths.DUMP_DATE, built=time.strftime("%Y-%m-%d %H:%M"),
-                seconds=round(time.time() - T0, 1))
-    (out / "meta.json.tmp").write_text(json.dumps(meta, indent=2))
-    for name in arrays:                     # swap in each file, meta.json last: it marks "complete"
-        os.replace(out / f"{name}.tmp.npy", out / f"{name}.npy")
-    os.replace(out / "meta.json.tmp", out / "meta.json")
+    built = dict(dump_date=paths.DUMP_DATE, built=time.strftime("%Y-%m-%d %H:%M"),
+                 seconds=round(time.time() - T0, 1))
+    if prose is not None:
+        write_atomically(out, prose_arrays, "prose_meta.json", {**prose_meta, **built})
+    if not args.prose_only:
+        write_atomically(out, arrays, "meta.json", {**meta, "articles": n, **built})
     log(f"done in {time.time() - T0:.0f}s", 100)
 
 

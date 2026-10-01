@@ -77,6 +77,11 @@ REGISTRY: list[Setting] = [
             ("stages", "centrality", "reverse"),
             help="A second score on the reversed graph that finds hub and overview articles "
                  "that link out to many important ones. Adds about as long again to the build."),
+    Setting("centrality_prose", BOOL, True, "Build", "Centrality", "Also PageRank on the prose link graph",
+            ("stages", "centrality", "prose"),
+            help="When the prose link graph is built, also rank articles by links written in article "
+                 "text only. Template links (ISBN, coordinates, navboxes) otherwise dominate; the "
+                 "prose PageRank is the better notability score and becomes the default."),
     Setting("text_lead_chars", STR, "1200", "Build", "Article text", "Lead length (characters)",
             ("stages", "text", "lead_chars"), pattern=r"\d{2,5}",
             hint="cut at a sentence end",

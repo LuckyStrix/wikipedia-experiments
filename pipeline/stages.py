@@ -261,13 +261,18 @@ def centrality_dir(s: Mapping) -> Path:
     return data_dir(s) / "centrality"
 
 
-def centrality_outputs(s: Mapping) -> list[Path]:
-    return [centrality_dir(s) / "meta.json"]    # written last, so its presence means complete
+def prose_dir(s: Mapping) -> Path:
+    return data_dir(s) / "prose_graph"
 
 
-def centrality_summary(s: Mapping) -> list[str]:
-    d = centrality_dir(s)
-    lines = [f"{p.relative_to(data_dir(s))}: {_size(p)}" for p in sorted(d.glob("*.*"))]
+def prose_outputs(s: Mapping) -> list[Path]:
+    # meta.json is written last, so its presence means complete
+    return [prose_dir(s) / f for f in GRAPH_FILES + ["out_order.npy", "lead_count.npy", "first_link.npy", "meta.json"]]
+
+
+def prose_summary(s: Mapping) -> list[str]:
+    d = prose_dir(s)
+    lines = [f"{p.relative_to(data_dir(s))}: {_size(p)}" for p in sorted(d.glob("*.npy"))]
     try:
         meta = json.loads((d / "meta.json").read_text())
     except (OSError, ValueError):
@@ -275,9 +280,37 @@ def centrality_summary(s: Mapping) -> list[str]:
     return lines + ["", *(f"{k}: {v}" for k, v in meta.items())]
 
 
+def centrality_uses_prose(s: Mapping) -> bool:
+    """Whether the centrality stage also ranks the prose link graph: the setting is on and it's built."""
+    return bool(s["centrality_prose"]) and all(p.exists() for p in prose_outputs(s))
+
+
+def centrality_outputs(s: Mapping) -> list[Path]:
+    d = centrality_dir(s)
+    # written last, so its presence means complete
+    return [d / "meta.json"] + ([d / "prose_meta.json"] if centrality_uses_prose(s) else [])
+
+
+def centrality_summary(s: Mapping) -> list[str]:
+    d = centrality_dir(s)
+    lines = [f"{p.relative_to(data_dir(s))}: {_size(p)}" for p in sorted(d.glob("*.*"))]
+    for name, title in (("meta.json", ""), ("prose_meta.json", "prose graph")):
+        try:
+            meta = json.loads((d / name).read_text())
+        except (OSError, ValueError):
+            continue
+        lines += ["", *([title + ":"] if title else []), *(f"{k}: {v}" for k, v in meta.items())]
+    return lines
+
+
 def centrality_command(s: Mapping) -> list[str]:
-    return [PY, "-m", "pipeline.build_centrality", "--damping", str(s["centrality_damping"]).strip(),
-            *([] if s["centrality_reverse"] else ["--no-reverse"])]
+    cmd = [PY, "-m", "pipeline.build_centrality", "--damping", str(s["centrality_damping"]).strip(),
+           *([] if s["centrality_reverse"] else ["--no-reverse"])]
+    if centrality_uses_prose(s):
+        cmd += ["--graph", str(prose_dir(s))]
+        if (centrality_dir(s) / "meta.json").exists() and not (centrality_dir(s) / "prose_meta.json").exists():
+            cmd.append("--prose-only")       # the rest is already built: add just the prose metric
+    return cmd
 
 
 def _embed_meta(s: Mapping) -> dict:
@@ -348,8 +381,17 @@ STAGES: list[Stage] = [
         signature="pipeline.build_titles",
     ),
     Stage(
+        key="prose_graph", name="Build prose link graph",
+        description="Only the links written in article text (no templates) -> prose_graph/.",
+        command=lambda s: [PY, "-m", "pipeline.build_prose_graph"],
+        inputs=lambda s: [dump_file(s, f) for f in TEXT_DUMPS] + core_outputs(s),
+        outputs=prose_outputs,
+        summary=prose_summary,
+        signature="pipeline.build_prose_graph",
+    ),
+    Stage(
         key="centrality", name="Compute centrality",
-        description="PageRank, in-degree ranks and reverse PageRank for every article.",
+        description="PageRank, in-degree ranks and reverse PageRank (also on the prose graph, if built).",
         command=centrality_command,
         inputs=lambda s: core_outputs(s),
         outputs=centrality_outputs,

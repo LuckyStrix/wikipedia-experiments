@@ -6,11 +6,14 @@ Notability score (0-100), the same for every place so results are comparable acr
 
     score = 100 * (0.7 * log(1 + signal) / log(1 + max_signal) + 0.3 * log(1 + langs) / log(1 + max_langs))
 
-- signal is the article's PageRank (data/centrality/pagerank.npy, scaled by the number of
-  articles so the average article is ~1) when that file exists, otherwise its incoming link count.
-  PageRank counts a link from an important article for more than one from an obscure one, so it
-  separates the Eiffel Tower from the hundreds of streets and schools around it better than raw
-  links do.
+- signal is the article's prose PageRank (data/centrality/prose_pagerank.npy: only links written in
+  article text count) when that file exists, else its PageRank (pagerank.npy; every link counts,
+  including the ones templates add), else its incoming link count; PageRanks are scaled by the number
+  of articles so the average article is ~1. PageRank counts a link from an important article for
+  more than one from an obscure one, so it separates the Eiffel Tower from the hundreds of streets and
+  schools around it better than raw links do, and the prose version leaves out the navbox and
+  infobox links that make a Paris office of an international organisation look more notable than the
+  Champ de Mars.
 - langs is the number of other-language Wikipedias that have the article: a cheap, independent
   vote on whether the place matters beyond the English-speaking world.
 - Logs, because both quantities span five orders of magnitude and a plain ratio would give almost
@@ -133,19 +136,19 @@ class NearbyFinder:
         self.lock = threading.Lock()
         self.titles = TitleIndex(data_dir / "titles.sqlite")
         self.meta = dict(self.db.execute("SELECT key, value FROM meta"))
-        self.pagerank = _load_pagerank(data_dir / "centrality" / "pagerank.npy")
         self.langs_max = self._q("SELECT max(langs) FROM places")[0][0] or 0
         self.places_count = int(self.meta.get("places", 0))
-        if self.pagerank is not None:
-            idx = np.array([r[0] for r in self._q("SELECT idx FROM places")], dtype=np.int64)
-            if len(idx) and idx.max() >= len(self.pagerank):
-                self.pagerank = None        # built from a different graph; don't trust it
-            else:
-                self._pr_scale = float(len(self.pagerank))
-                self.signal_max = float(self.pagerank[idx].max() * self._pr_scale) if len(idx) else 1.0
+        idx = np.array([r[0] for r in self._q("SELECT idx FROM places")], dtype=np.int64)
+        self.pagerank, self.signal_name = None, "incoming links"
+        for name, label in (("prose_pagerank", "prose PageRank"), ("pagerank", "PageRank")):   # best first
+            arr = _load_pagerank(data_dir / "centrality" / f"{name}.npy")
+            if arr is not None and not (len(idx) and idx.max() >= len(arr)):   # else built from another graph
+                self.pagerank, self.signal_name = arr, label
+                self._pr_scale = float(len(arr))
+                self.signal_max = float(arr[idx].max() * self._pr_scale) if len(idx) else 1.0
+                break
         if self.pagerank is None:
             self.signal_max = float(self._q("SELECT max(links) FROM places")[0][0] or 1)
-        self.signal_name = "PageRank" if self.pagerank is not None else "incoming links"
 
     def _q(self, sql, args=()):
         with self.lock:
@@ -299,7 +302,7 @@ class NearbyFinder:
 
 
 def _load_pagerank(path: Path) -> np.ndarray | None:
-    """data/centrality/pagerank.npy (float32, indexed by graph idx) if another stage has built it."""
+    """A data/centrality/*pagerank.npy (float32, indexed by graph idx) if another stage has built it."""
     try:
         arr = np.load(path, mmap_mode="r")
     except (OSError, ValueError):

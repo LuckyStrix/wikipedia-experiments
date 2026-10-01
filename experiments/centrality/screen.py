@@ -54,9 +54,11 @@ class CentralityScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="ce-body"):
-            yield Label("PageRank scores an article by how many important articles link to it. Compare "
-                        "it with a plain count of incoming links, or with 'gateway' (reverse PageRank), "
-                        "which favours articles that link out to many important ones.", classes="ce-intro")
+            yield Label("PageRank scores an article by how many important articles link to it. Prose PageRank "
+                        "counts only links written in article text, which is what most people mean by "
+                        "notable; plain PageRank also counts every link a template adds (ISBN, coordinates). "
+                        "Compare with in-links, or 'gateway' (reverse PageRank), which favours articles "
+                        "that link out to many important ones.", classes="ce-intro")
             with TabbedContent(id="ce-tabs"):
                 with TabPane("Leaderboard", id="ce-board"):
                     with Horizontal(classes="ce-controls"):
@@ -99,9 +101,11 @@ class CentralityScreen(Screen):
         self.ex = ex
         built = ex.c.meta
         self._status(f"{len(ex.c):,} articles · PageRank damping {built.get('damping')}, "
-                     f"{built.get('iterations')} iterations · dump {built.get('dump_date')}")
-        if "reverse_pagerank" not in ex.metrics:
-            self.query_one("#ce-metric", Select).set_options([(METRICS[m], m) for m in ex.metrics])
+                     f"{built.get('iterations')} iterations · dump {built.get('dump_date')}"
+                     + (f" · prose graph {ex.c.prose_meta['links']:,} links" if "prose_pagerank" in ex.metrics else ""))
+        metric = self.query_one("#ce-metric", Select)
+        metric.set_options([(METRICS[m], m) for m in ex.metrics])      # only what was built
+        metric.value = ex.default_metric                               # prose PageRank when there is one
         self.query_one("#ce-picker", TitlePicker).disabled = False
         self._refresh_board()
         self._refresh_surprises()
@@ -136,8 +140,9 @@ class CentralityScreen(Screen):
         t.add_column(Text("#", justify="right"))
         t.add_column("Article", width=44)
         t.add_column(Text(SHORT[metric], justify="right"))
-        t.add_column(Text("Links in", justify="right"))
-        t.add_column(Text("Links out", justify="right"))
+        what = "Text links" if metric == "prose_pagerank" else "Links"      # the prose graph has fewer
+        t.add_column(Text(f"{what} in", justify="right"))
+        t.add_column(Text(f"{what} out", justify="right"))
         for m in others:
             t.add_column(Text(f"{SHORT[m]} #", justify="right"))
         for i, r in enumerate(rows, 1):
@@ -194,6 +199,8 @@ class CentralityScreen(Screen):
             log.write(Text(f"(from the redirect {match.title})", style="dim"))
         log.write(Text(f"{p.in_links:,} incoming links · {p.out_links:,} outgoing links · "
                        f"{len(self.ex.c):,} articles in all", style="dim"))
+        if p.prose_in is not None:
+            log.write(Text(f"in article text only: {p.prose_in:,} incoming · {p.prose_out:,} outgoing", style="dim"))
         table = Table(box=None, pad_edge=False, header_style=f"bold {theme.secondary}")
         table.add_column("Metric")
         table.add_column("Rank", justify="right")
@@ -204,13 +211,14 @@ class CentralityScreen(Screen):
                           format_score(m, p.scores[m]))
         log.write(Text(""))
         log.write(table)
-        for label, rows in (("Most notable articles linking here", p.linked_from),
-                            ("Most notable articles it links to", p.links_to)):
+        text_only = " in its text" if p.metric == "prose_pagerank" else ""
+        for label, rows in ((f"Most notable articles linking here{text_only}", p.linked_from),
+                            (f"Most notable articles it links to{text_only}", p.links_to)):
             if rows:
                 log.write(Text(""))
                 log.write(Text(label, style=f"bold {theme.secondary}"))
                 for title, rank in rows:
-                    log.write(Text.assemble("  ", title, (f"  PageRank #{rank:,}", "dim")))
+                    log.write(Text.assemble("  ", title, (f"  {SHORT[p.metric]} #{rank:,}", "dim")))
 
     # ── surprises ─────────────────────────────────────────────────────────────
     @on(Select.Changed, "#ce-surp-kind, #ce-pool")

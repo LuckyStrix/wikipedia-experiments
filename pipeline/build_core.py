@@ -189,14 +189,15 @@ def split_keys(keys):
     return src, dst
 
 
-def write_graph(src, dst, art_ids):
-    """CSR arrays for outgoing links (edges are already sorted by src) and incoming links.
+def write_graph(src, dst, art_ids, out=None, say=None):
+    """CSR arrays for outgoing links (edges are already sorted by src) and incoming links, written
+    to `out` (default data/graph; build_prose_graph writes a second graph in the same layout).
 
     Incoming links are placed with a chunked counting sort rather than argsort, which would need
     an 8-byte index per edge (~6 GB for enwiki) on top of everything else.
     """
-    log("writing graph arrays", 72)
-    out, n = paths.GRAPH, len(art_ids)
+    (say or log)("writing graph arrays", 72)
+    out, n = out or paths.GRAPH, len(art_ids)
     out.mkdir(parents=True, exist_ok=True)
     np.save(out / "idx_to_page_id.npy", art_ids)
     np.save(out / "out_indptr.npy", np.concatenate(([0], np.cumsum(np.bincount(src, minlength=n)))))

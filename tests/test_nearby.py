@@ -323,6 +323,25 @@ def test_score_uses_pagerank_when_present(geo_data):
     assert NearbyFinder(geo_data).signal_name == "incoming links"
 
 
+def test_score_prefers_prose_pagerank(geo_data):
+    from wikiexp import core
+    n = len(core.Graph(geo_data / "graph"))
+    (geo_data / "centrality").mkdir()
+    pr = np.full(n, 1.0 / n, dtype=np.float32)
+    pr[2] = 0.5                                       # Film: the template-link favourite
+    np.save(geo_data / "centrality" / "pagerank.npy", pr)
+    prose = np.full(n, 1.0 / n, dtype=np.float32)
+    prose[3] = 0.5                                    # Biology: what the article text favours
+    np.save(geo_data / "centrality" / "prose_pagerank.npy", prose)
+    f = NearbyFinder(geo_data)
+    assert f.signal_name == "prose PageRank"
+    r = f.nearby(Location(48.8584, 2.2945, "here"), 20)
+    assert r.hits[0].title == "Biology"
+    np.save(geo_data / "centrality" / "prose_pagerank.npy", np.zeros(3, dtype=np.float32))   # wrong size: skipped
+    f = NearbyFinder(geo_data)
+    assert f.signal_name == "PageRank" and f.nearby(Location(48.8584, 2.2945, "here"), 20).hits[0].title == "Film"
+
+
 # ── resolving locations ───────────────────────────────────────────────────────
 
 def test_resolve_names_redirects_and_coordinates(finder):
